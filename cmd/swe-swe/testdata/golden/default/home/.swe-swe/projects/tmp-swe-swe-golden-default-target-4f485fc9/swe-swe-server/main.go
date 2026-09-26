@@ -3572,9 +3572,8 @@ func setupSweSweFiles(destDir string) error {
 // isTrackedInGit checks if a file is tracked in git
 // Returns true if the file is tracked, false otherwise
 func isTrackedInGit(repoDir, relativePath string) bool {
-	cmd := exec.Command("git", "ls-files", "--error-unmatch", relativePath)
-	cmd.Dir = repoDir
-	return cmd.Run() == nil
+	_, err := gitRead(repoDir, "ls-files", "--error-unmatch", relativePath)
+	return err == nil
 }
 
 // ensureSweSweFiles symlinks swe-swe files from the base repo into a worktree.
@@ -3690,8 +3689,7 @@ func upsertAgentDocInclude(workDir, assistant string) error {
 
 // getGitRoot returns the root directory of the git repository
 func getGitRoot() (string, error) {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
+	output, err := gitRead(".", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("failed to get git root: %w", err)
 	}
@@ -3700,8 +3698,7 @@ func getGitRoot() (string, error) {
 
 // getMainRepoBranch returns the current branch of the main repo (/workspace)
 func getMainRepoBranch() string {
-	cmd := exec.Command("git", "-C", workspaceDir, "branch", "--show-current")
-	output, err := cmd.Output()
+	output, err := gitRead(workspaceDir, "branch", "--show-current")
 	if err != nil {
 		return ""
 	}
@@ -3722,14 +3719,14 @@ func worktreeExists(branchName string) bool {
 
 // localBranchExists checks if a local git branch exists with the given name
 func localBranchExists(branchName string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", branchName)
-	return cmd.Run() == nil
+	_, err := gitRead(".", "rev-parse", "--verify", branchName)
+	return err == nil
 }
 
 // remoteBranchExists checks if a remote git branch exists with the given name
 func remoteBranchExists(branchName string) bool {
-	cmd := exec.Command("git", "rev-parse", "--verify", "origin/"+branchName)
-	return cmd.Run() == nil
+	_, err := gitRead(".", "rev-parse", "--verify", "origin/"+branchName)
+	return err == nil
 }
 
 // WorktreeSessionInfo contains information about an active session running in a worktree
@@ -3874,8 +3871,7 @@ func handleReposAPI(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Try to get remote URL
-			cmd := exec.Command("git", "-C", workspacePath, "remote", "get-url", "origin")
-			if output, err := cmd.Output(); err == nil {
+			if output, err := gitRead(workspacePath, "remote", "get-url", "origin"); err == nil {
 				info.RemoteURL = strings.TrimSpace(string(output))
 			}
 
@@ -3973,8 +3969,7 @@ func sanitizeRepoURL(repoURL string) string {
 
 // getWorkspaceOriginURL returns the origin remote URL of /workspace repo
 func getWorkspaceOriginURL() (string, error) {
-	cmd := exec.Command("git", "-C", workspaceDir, "remote", "get-url", "origin")
-	output, err := cmd.Output()
+	output, err := gitRead(workspaceDir, "remote", "get-url", "origin")
 	if err != nil {
 		return "", fmt.Errorf("failed to get origin URL: %w", err)
 	}
@@ -3983,8 +3978,7 @@ func getWorkspaceOriginURL() (string, error) {
 
 // getRepoOriginURL returns the origin remote URL for a given repo path
 func getRepoOriginURL(repoPath string) (string, error) {
-	cmd := exec.Command("git", "-C", repoPath, "remote", "get-url", "origin")
-	output, err := cmd.Output()
+	output, err := gitRead(repoPath, "remote", "get-url", "origin")
 	if err != nil {
 		return "", fmt.Errorf("failed to get origin URL: %w", err)
 	}
@@ -3993,8 +3987,7 @@ func getRepoOriginURL(repoPath string) (string, error) {
 
 // getCurrentBranch returns the current branch name for a given repo path
 func getCurrentBranch(repoPath string) (string, error) {
-	cmd := exec.Command("git", "-C", repoPath, "rev-parse", "--abbrev-ref", "HEAD")
-	output, err := cmd.Output()
+	output, err := gitRead(repoPath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
@@ -4259,8 +4252,7 @@ func handleRepoPrepareWorkspace(w http.ResponseWriter, repoPath string) {
 	// Report whether a remote exists, but never fetch here: prepare must
 	// respond instantly so the dialog unblocks. The dialog freshens remote
 	// refs afterwards via /api/repo/branches?fetch=1 in the background.
-	remoteCmd := exec.Command("git", "-C", workDir, "remote")
-	remoteOutput, err := remoteCmd.Output()
+	remoteOutput, err := gitRead(workDir, "remote")
 	response["hasRemote"] = err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0
 
 	// Which host a saved HTTPS token would be keyed under, so the dialog can
@@ -4315,7 +4307,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url, credHost, credUsername, 
 			return
 		}
 
-		output, err := runGitWithTransientCred(credHost, credUsername, credToken, "clone", url, repoPath)
+		output, err := runGitWithTransientCred(repoBase, credHost, credUsername, credToken, "clone", url, repoPath)
 		if err != nil {
 			log.Printf("Git clone failed: %v, output: %s", err, string(output))
 			if cloneNeedsAuth(string(output)) {
@@ -4335,7 +4327,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url, credHost, credUsername, 
 		log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 	}
 
-	remoteOutput, remoteErr := exec.Command("git", "-C", repoPath, "remote").Output()
+	remoteOutput, remoteErr := gitRead(repoPath, "remote")
 
 	resp := map[string]interface{}{
 		"path":        repoPath,
@@ -4419,8 +4411,7 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 	}
 
 	// Initialize git repo
-	cmd := exec.Command("git", "-C", repoPath, "init")
-	output, err := cmd.CombinedOutput()
+	output, err := gitWrite(repoPath, "init")
 	if err != nil {
 		log.Printf("Git init failed: %v, output: %s", err, string(output))
 		w.Header().Set("Content-Type", "application/json")
@@ -4430,10 +4421,9 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 	}
 
 	// Create initial empty commit so git operations (rev-parse, worktree, etc.) work
-	commitCmd := exec.Command("git", "-C", repoPath,
+	commitOutput, err := gitWrite(repoPath,
 		"-c", "user.name=swe-swe", "-c", "user.email=swe-swe@localhost",
 		"commit", "--allow-empty", "-m", "initial")
-	commitOutput, err := commitCmd.CombinedOutput()
 	if err != nil {
 		log.Printf("Warning: initial commit failed: %v, output: %s", err, string(commitOutput))
 		// Non-fatal: the repo still works, just without an initial commit
@@ -4470,7 +4460,7 @@ func handleRepoPrepareCreate(w http.ResponseWriter, name string) {
 // Local branches win any name collision, so a repo that genuinely has
 // refs/heads/origin/x keeps listing it verbatim -- it came from refs/heads.
 func listBranchNames(repoPath string) ([]string, error) {
-	output, err := exec.Command("git", "-C", repoPath, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes").Output()
+	output, err := gitRead(repoPath, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes")
 	if err != nil {
 		return nil, err
 	}
@@ -4578,7 +4568,7 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	// listing.
 	warning := ""
 	if req.Fetch {
-		remoteOutput, err := exec.Command("git", "-C", repoPath, "remote").Output()
+		remoteOutput, err := gitRead(repoPath, "remote")
 		remotes := strings.Fields(string(remoteOutput))
 		if req.Remote != "" && !slices.Contains(remotes, req.Remote) {
 			w.Header().Set("Content-Type", "application/json")
@@ -4690,12 +4680,12 @@ func remoteTrackingRef(repoPath, branchName, preferredRemote string) string {
 		remotes = append(remotes, preferredRemote)
 	}
 	remotes = append(remotes, "origin")
-	if out, err := exec.Command("git", "-C", repoPath, "remote").Output(); err == nil {
+	if out, err := gitRead(repoPath, "remote"); err == nil {
 		remotes = append(remotes, strings.Fields(string(out))...)
 	}
 	for _, remote := range remotes {
 		ref := "refs/remotes/" + remote + "/" + branchName
-		if exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "--quiet", ref).Run() == nil {
+		if _, err := gitRead(repoPath, "rev-parse", "--verify", "--quiet", ref); err == nil {
 			return remote + "/" + branchName
 		}
 	}
@@ -4721,7 +4711,8 @@ func stripRemotePrefix(repoPath, branchName string) string {
 		return branchName
 	}
 	verify := func(ref string) bool {
-		return exec.Command("git", "-C", repoPath, "rev-parse", "--verify", "--quiet", ref).Run() == nil
+		_, err := gitRead(repoPath, "rev-parse", "--verify", "--quiet", ref)
+		return err == nil
 	}
 	if !verify("refs/remotes/" + remote + "/" + rest) {
 		return branchName
@@ -4772,29 +4763,27 @@ func createWorktreeInRepo(repoPath, branchName string) (string, error) {
 		return "", fmt.Errorf("failed to create worktree directory: %w", err)
 	}
 
-	var cmd *exec.Cmd
-	var output []byte
-	var err error
+	var args []string
 
 	// Check if local branch exists in this repo
-	localCmd := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branchName)
-	localExists := localCmd.Run() == nil
+	_, err := gitRead(repoPath, "rev-parse", "--verify", branchName)
+	localExists := err == nil
 
 	// Check if any remote has the branch (not just origin)
 	remoteRef := remoteTrackingRef(repoPath, branchName, preferredRemote)
 
 	if localExists {
 		log.Printf("Attaching worktree to existing local branch %s in %s", branchName, repoPath)
-		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", worktreePath, branchName)
+		args = []string{"worktree", "add", worktreePath, branchName}
 	} else if remoteRef != "" {
 		log.Printf("Creating worktree tracking remote branch %s in %s", remoteRef, repoPath)
-		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "--track", "-b", branchName, worktreePath, remoteRef)
+		args = []string{"worktree", "add", "--track", "-b", branchName, worktreePath, remoteRef}
 	} else {
 		log.Printf("Creating new worktree with fresh branch %s in %s", branchName, repoPath)
-		cmd = exec.Command("git", "-C", repoPath, "worktree", "add", "-b", branchName, worktreePath)
+		args = []string{"worktree", "add", "-b", branchName, worktreePath}
 	}
 
-	output, err = cmd.CombinedOutput()
+	output, err := gitWrite(repoPath, args...)
 	if err != nil {
 		return "", fmt.Errorf("failed to create worktree: %w (output: %s)", err, string(output))
 	}
@@ -9522,9 +9511,7 @@ func gitHasCommittedFile(workDir, path string) bool {
 	defer cancel()
 	// --max-count=1 applies after the pathspec filter, so this stops at the
 	// first commit that touches path instead of walking all of history.
-	cmd := exec.CommandContext(ctx, "git", "rev-list", "--all", "--max-count=1", "--", path)
-	cmd.Dir = workDir
-	out, err := cmd.Output()
+	out, err := runGit(ctx, gitCall{Dir: workDir, Args: []string{"rev-list", "--all", "--max-count=1", "--", path}})
 	if err != nil {
 		return false
 	}
@@ -10584,10 +10571,11 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			resp := map[string]interface{}{"path": workDir}
 			// Soft fetch if git repo
 			if _, err := os.Stat(filepath.Join(workDir, ".git")); err == nil {
-				remoteCmd := exec.Command("git", "-C", workDir, "remote")
-				if out, err := remoteCmd.Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
-					cmd := exec.Command("git", "-C", workDir, "fetch", "--all")
-					if out, err := cmd.CombinedOutput(); err != nil {
+				if out, err := gitRead(workDir, "remote"); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+					ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+					out, err := runGitWithTransientCredContext(ctx, workDir, "", "", "", "fetch", "--all")
+					cancel()
+					if err != nil {
 						resp["warning"] = fmt.Sprintf("fetch failed: %s", string(out))
 					}
 				}
@@ -10606,14 +10594,14 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			repoBase := filepath.Join(reposDir, sanitizedURL)
 			repoPath := filepath.Join(repoBase, "workspace")
 			if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "-C", repoPath, "fetch", "--all"); err != nil {
+				if out, err := runGitWithTransientCred(repoPath, args.CredHost, args.CredUsername, args.CredToken, "fetch", "--all"); err != nil {
 					return nil, nil, fmt.Errorf("git fetch failed: %s", string(out))
 				}
 			} else {
 				if err := os.MkdirAll(repoBase, 0755); err != nil {
 					return nil, nil, fmt.Errorf("failed to create directory: %w", err)
 				}
-				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "clone", args.URL, repoPath); err != nil {
+				if out, err := runGitWithTransientCred(repoBase, args.CredHost, args.CredUsername, args.CredToken, "clone", args.URL, repoPath); err != nil {
 					return nil, nil, fmt.Errorf("git clone failed: %s", string(out))
 				}
 			}
@@ -10638,14 +10626,15 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			if err := os.MkdirAll(repoPath, 0755); err != nil {
 				return nil, nil, fmt.Errorf("failed to create directory: %w", err)
 			}
-			cmd := exec.Command("git", "-C", repoPath, "init")
-			if out, err := cmd.CombinedOutput(); err != nil {
+			if out, err := gitWrite(repoPath, "init"); err != nil {
 				return nil, nil, fmt.Errorf("git init failed: %s", string(out))
 			}
-			commitCmd := exec.Command("git", "-C", repoPath,
+			if out, err := gitWrite(repoPath,
 				"-c", "user.name=swe-swe", "-c", "user.email=swe-swe@localhost",
-				"commit", "--allow-empty", "-m", "initial")
-			commitCmd.CombinedOutput() // non-fatal
+				"commit", "--allow-empty", "-m", "initial"); err != nil {
+				// Non-fatal: the repo still works, just without an initial commit
+				log.Printf("Warning: initial commit failed: %v, output: %s", err, string(out))
+			}
 			if err := setupSweSweFiles(repoPath); err != nil {
 				log.Printf("Warning: failed to setup swe-swe files in %s: %v", repoPath, err)
 			}

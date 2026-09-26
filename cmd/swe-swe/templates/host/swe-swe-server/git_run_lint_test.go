@@ -7,60 +7,20 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// gitStartsNotYetMoved lists, per file, how many places still start git
-// without runGit (tasks/2026-09-25-git-one-at-a-time.md, phase D moves them).
-// A file may not go above its number and no other file may start git; when a
-// file goes below, lower its number here so it can't creep back up. Phase D
-// ends with this map empty.
-var gitStartsNotYetMoved = map[string]int{
-	"branch_cards.go":      1,
-	"branch_check.go":      1,
-	"branch_delete.go":     2,
-	"branch_refresh.go":    1,
-	"clone_cred.go":        2,
-	"main.go":              27,
-	"remote_branch.go":     1,
-	"session_gitconfig.go": 3,
-}
-
 // TestGitStartsOnlyInRunGit: every git command in swe-swe-server goes through
-// runGit (git_run.go), which runs them one at a time per project. Starting
-// git any other way fails here.
+// runGit (git_run.go), which runs them one at a time per project
+// (tasks/2026-09-25-git-one-at-a-time.md). Starting git any other way fails
+// here.
 func TestGitStartsOnlyInRunGit(t *testing.T) {
-	found := findGitStarts(t, ".")
-	counts := map[string]int{}
-	var problems []string
-	for _, f := range found {
-		if f.file == "git_run.go" {
-			continue
+	for _, f := range findGitStarts(t, ".") {
+		if f.file != "git_run.go" {
+			t.Errorf("%s: starts git directly; use runGit, gitRead or gitWrite (git_run.go)", f)
 		}
-		counts[f.file]++
-		if _, known := gitStartsNotYetMoved[f.file]; !known {
-			problems = append(problems, f.String()+": starts git directly; use runGit (git_run.go)")
-		}
-	}
-	for file, max := range gitStartsNotYetMoved {
-		switch n := counts[file]; {
-		case n > max:
-			for _, f := range found {
-				if f.file == file {
-					problems = append(problems, f.String())
-				}
-			}
-			problems = append(problems, fmt.Sprintf("%s starts git in %d places, allowed %d: use runGit (git_run.go) for new ones", file, n, max))
-		case n < max:
-			problems = append(problems, fmt.Sprintf("%s now starts git in %d places: lower gitStartsNotYetMoved[%q] from %d to %d", file, n, file, max, n))
-		}
-	}
-	sort.Strings(problems)
-	for _, p := range problems {
-		t.Error(p)
 	}
 }
 

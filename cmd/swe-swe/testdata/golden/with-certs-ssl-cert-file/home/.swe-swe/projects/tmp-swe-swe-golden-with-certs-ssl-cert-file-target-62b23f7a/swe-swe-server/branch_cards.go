@@ -215,7 +215,7 @@ type branchGit func(args ...string) ([]byte, error)
 
 func defaultBranchGit(repoPath string) branchGit {
 	return func(args ...string) ([]byte, error) {
-		return exec.Command("git", append([]string{"-C", repoPath}, args...)...).Output()
+		return gitRead(repoPath, args...)
 	}
 }
 

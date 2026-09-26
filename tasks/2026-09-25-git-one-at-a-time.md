@@ -1,7 +1,7 @@
 # Branch cards stop overloading the box; git runs one command at a time
 
 **Date**: 2026-09-25
-**Status**: Phases A, B, C DONE (branch feat/branch-list-only); D-E not started
+**Status**: Phases A-D DONE (branch feat/branch-list-only); E not started
 **Estimate**: about 2.5 days (A: 0.5, B: 0.5, C+D: 1.5)
 
 ## Why
@@ -202,6 +202,13 @@ and sh/bash -c scripts.
 
 Timeouts: local 10 s; network 10 s for ls-remote/fetch of one remote, keep
 existing (or 5 min) for clone. Remove the known list; linter is strict.
+
+Phase D result: all 38 sites on runGit via gitRead (10 s), gitWrite (5 min),
+runGitWithTransientCred(dir, ...) (network line, 30 min default); MCP
+prepare_repo's soft `fetch --all` now 2 min and non-interactive; its silent
+initial-commit failure is now logged. Checker is strict (no allowlist).
+Known cost to measure in E: gitRead's 10 s includes waiting in line, so a
+long worktree remove can make a listing on the same project fail.
 
 ## Phase E: live check in a test container
 

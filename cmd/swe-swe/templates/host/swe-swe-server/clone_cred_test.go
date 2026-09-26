@@ -55,7 +55,7 @@ func TestRunGitWithTransientCredBare(t *testing.T) {
 	fakeGit(t, dir, envFile, 0, "")
 	withPath(t, dir)
 
-	out, err := runGitWithTransientCred("", "", "", "config", "--list")
+	out, err := runGitWithTransientCred(dir, "", "", "", "config", "--list")
 	if err != nil {
 		t.Fatalf("bare run returned error: %v, output=%s", err, out)
 	}
@@ -98,7 +98,7 @@ func TestRunGitWithTransientCredWiresAndClears(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		out, err := runGitWithTransientCred(host, "", "ghp_secrettoken", "clone", "x", "y")
+		out, err := runGitWithTransientCred(dir, host, "", "ghp_secrettoken", "clone", "x", "y")
 		done <- result{out, err}
 	}()
 

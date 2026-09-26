@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -133,14 +132,14 @@ var (
 )
 
 func runBranchFetchOnce(repoPath, remote, credHost, credUsername, credToken string) ([]byte, error) {
-	timeout, args := branchFetchTimeout, []string{"-C", repoPath, "fetch", "--all"}
+	timeout, args := branchFetchTimeout, []string{"fetch", "--all"}
 	if remote != "" {
-		timeout, args = remoteFetchTimeout, []string{"-C", repoPath, "fetch", remote}
+		timeout, args = remoteFetchTimeout, []string{"fetch", remote}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken, args...)
+	out, err := runGitWithTransientCredContext(ctx, repoPath, credHost, credUsername, credToken, args...)
 	if err != nil && ctx.Err() != nil {
 		return out, errBranchFetchTimeout
 	}
@@ -155,11 +154,11 @@ func runBranchFetchOnce(repoPath, remote, credHost, credUsername, credToken stri
 // default offline instead of guessing. Same deadline and credentials as the
 // fetch; best effort -- a failure only leaves the guess in place.
 func saveOriginHead(ctx context.Context, repoPath, credHost, credUsername, credToken string) {
-	if exec.Command("git", "-C", repoPath, "remote", "get-url", "origin").Run() != nil {
+	if _, err := gitRead(repoPath, "remote", "get-url", "origin"); err != nil {
 		return // no origin; nothing to ask
 	}
-	if out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken,
-		"-C", repoPath, "remote", "set-head", "origin", "--auto"); err != nil {
+	if out, err := runGitWithTransientCredContext(ctx, repoPath, credHost, credUsername, credToken,
+		"remote", "set-head", "origin", "--auto"); err != nil {
 		log.Printf("Saving origin's default branch failed for %s (keeping the guess): %v, output: %s", repoPath, err, string(out))
 	}
 }

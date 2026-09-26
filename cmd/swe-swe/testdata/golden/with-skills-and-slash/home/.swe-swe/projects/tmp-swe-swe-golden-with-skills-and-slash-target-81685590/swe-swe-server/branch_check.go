@@ -23,7 +23,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -57,7 +56,7 @@ type branchCheck struct {
 type branchCheckGit func(ctx context.Context, dir string, args ...string) ([]byte, error)
 
 func defaultBranchCheckGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...).Output()
+	return runGit(ctx, gitCall{Dir: dir, Args: args})
 }
 
 // checkBranches runs both checks for one local branch (only != "") or for
