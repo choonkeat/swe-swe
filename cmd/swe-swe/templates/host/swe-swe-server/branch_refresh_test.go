@@ -272,7 +272,7 @@ func TestBranchRefreshConcurrentFetchesShareOne(t *testing.T) {
 		errs := make(chan error, 2)
 		for n := 0; n < 2; n++ {
 			go func() {
-				out, err := runBranchFetch(clone, "", "", "")
+				out, err := runBranchFetch(clone, "", "", "", "")
 				if err != nil {
 					err = fmt.Errorf("%v: %s", err, out)
 				}

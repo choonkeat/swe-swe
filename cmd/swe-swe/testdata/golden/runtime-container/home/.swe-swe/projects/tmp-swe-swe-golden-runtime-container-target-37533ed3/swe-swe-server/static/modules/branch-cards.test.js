@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, cardTags, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, nameCheckRemote, cardTags, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -36,9 +36,16 @@ test('groupCards: workspace, on this box, leftovers, one online group per remote
         [['origin', ['foo', 'shared']], ['upstream', ['shared']]]);
 });
 
-test('groupCards: a remote with no online-only branches gets no group', () => {
+test('groupCards: a remote with no online-only branches still gets a group to open', () => {
     const g = groupCards(reply({ cards: reply().cards.filter((c) => c.remote !== 'upstream') }));
-    assert.deepStrictEqual(g.online.map((o) => o.remote), ['origin']);
+    assert.deepStrictEqual(g.online.map((o) => [o.remote, o.cards.length]), [['origin', 2], ['upstream', 0]]);
+});
+
+test('nameCheckRemote: origin first, else the first remote, else none', () => {
+    assert.strictEqual(nameCheckRemote({ remotes: ['upstream', 'origin'] }), 'origin');
+    assert.strictEqual(nameCheckRemote({ remotes: ['upstream', 'fork'] }), 'upstream');
+    assert.strictEqual(nameCheckRemote({ remotes: [] }), '');
+    assert.strictEqual(nameCheckRemote(null), '');
 });
 
 test('groupCards: no cards in the reply (older server) returns null', () => {

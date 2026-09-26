@@ -42,7 +42,7 @@ const LONGURL_REPO = '/repos/e2e-longurl-repo/workspace';
 const LONGURL_REMOTE = 'git@gitlab.example.com:acme/payments-backend-service.git';
 const LONGURL_SHORT = 'acme/payments-backend-service';
 
-// A repo on an HTTPS remote: the case where the background branch refresh
+// A repo on an HTTPS remote: the case where downloading an online section
 // needs the browser's saved token, because the server holds no credentials
 // outside a session.
 const HTTPS_REPO = '/repos/e2e-https-repo/workspace';
@@ -125,7 +125,7 @@ function setupLongUrlRepo(containerName) {
 // Create a repo whose origin is an HTTPS remote. Those are the ones that need
 // a username/token, and the server has none of its own (credentials live per
 // session, and the dialog runs before any session exists) -- so the browser
-// must hand its saved token to the background refresh. The host resolves
+// must hand its saved token to the section download. The host resolves
 // nowhere, so the fetch fails fast instead of hanging.
 function setupHttpsRepo(containerName) {
   execSync(`docker exec ${containerName} sh -c '
@@ -224,6 +224,16 @@ async function waitUntilInUse(page, kind, name) {
 // Remove a branch and its folder even if a just-ended session still sits in it.
 function dropCardsBranch(name) {
   inCards(`git worktree remove --force --force ${CARDS_WORKTREES}/${name} 2>/dev/null; rm -rf ${CARDS_WORKTREES}/${name}; git worktree prune; git branch -D ${name} 2>/dev/null; true`);
+}
+
+// dropCardsBranch for a branch a session just used: the ended session's
+// processes linger a second or two in the folder, which can make the first
+// removal miss. Retry until the branch is really gone.
+async function dropSessionBranch(name) {
+  await expect.poll(() => {
+    dropCardsBranch(name);
+    return cardsBranchExists(name) || cardsPathExists(`${CARDS_WORKTREES}/${name}`);
+  }, { timeout: 15_000, intervals: [500, 1_000, 2_000] }).toBe(false);
 }
 
 // Pick a local branch card, then press its Delete.
@@ -357,6 +367,8 @@ test.describe('new-session dialog', () => {
     await expect(page.locator('.branch-card__count')).toHaveCount(0);
   });
 
+  // Before the tests that start sessions: those can leave branches behind
+  // in the cards repo, which would change the count.
   test('many branches show a tip to ask the agent to clean up', async ({ page }) => {
     await openCardsRepo(page);
     await expect(page.locator('.branch-cards__tip')).toHaveCount(0);
@@ -368,6 +380,99 @@ test.describe('new-session dialog', () => {
       await expect(tip).toContainText('"Let\'s discuss what worktrees & branches we can clean up"');
     } finally {
       inCards('for i in 1 2 3 4 5 6; do git branch -D tip-$i; done 2>/dev/null; true');
+    }
+  });
+
+  // --- Online sections download on open; new names are checked online ---
+
+  function onlineSection(page, remote) {
+    return page.locator('details.branch-cards__online', { hasText: 'Online only: ' + remote });
+  }
+
+  test('opening an online section downloads that remote only', async ({ page }) => {
+    inCards('git push -q /tmp/e2e-cards-origin.git main:fresh-on-origin && git push -q /tmp/e2e-cards-upstream.git main:fresh-on-upstream');
+    const posts = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/repo/branches') && req.method() === 'POST') posts.push(JSON.parse(req.postData() || '{}'));
+    });
+    try {
+      await openCardsRepo(page);
+      await expect(onlineSection(page, 'origin').locator('summary')).toHaveText('Online only: origin (1)');
+      await onlineSection(page, 'origin').locator('summary').click();
+      await expect(onlineSection(page, 'origin').locator('summary')).toHaveText('Online only: origin (2)');
+      await expect(branchCard(page, 'fresh-on-origin')).toBeVisible();
+      expect(posts.map((p) => p.remote)).toEqual(['origin']);
+      // Closing and reopening does not download again.
+      await onlineSection(page, 'origin').locator('summary').click();
+      await onlineSection(page, 'origin').locator('summary').click();
+      await page.waitForTimeout(300);
+      expect(posts.length).toBe(1);
+      await expect(onlineSection(page, 'upstream').locator('summary')).toHaveText('Online only: upstream (1)');
+    } finally {
+      inCards('git push -q /tmp/e2e-cards-origin.git :fresh-on-origin; git push -q /tmp/e2e-cards-upstream.git :fresh-on-upstream; git update-ref -d refs/remotes/origin/fresh-on-origin; git update-ref -d refs/remotes/upstream/fresh-on-upstream; true');
+    }
+  });
+
+  test('a failed section download says so inside the section, with Retry', async ({ page }) => {
+    let fail = true;
+    await page.route('**/api/repo/branches', async (route) => {
+      if (route.request().method() === 'POST' && fail) return route.abort();
+      return route.continue();
+    });
+    await openCardsRepo(page);
+    const section = onlineSection(page, 'upstream');
+    await section.locator('summary').click();
+    await expect(section.locator('.branch-card__line--error')).toHaveText(/Couldn't reach upstream\./);
+    await expect(page.locator('#new-session-warning')).toBeHidden();
+    fail = false;
+    await section.getByRole('button', { name: 'Retry' }).click();
+    await expect(section.locator('.branch-card__line--error')).toHaveCount(0);
+  });
+
+  // The server runs the download outside any session, so it owns no
+  // credentials: the browser hands over its saved token -- in the body,
+  // never the URL, where access logs would keep it.
+  test('an online section download carries the saved HTTPS token in the body', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(([host, bag]) => {
+      localStorage.setItem('swe-swe-creds:' + host, JSON.stringify(bag));
+    }, [HTTPS_HOST, { username: 'e2e-user', token: 'e2e-secret-token' }]);
+    const posts = [];
+    page.on('request', (req) => {
+      if (req.url().includes('/api/repo/branches') && req.method() === 'POST') {
+        posts.push({ url: req.url(), body: JSON.parse(req.postData() || '{}') });
+      }
+    });
+    try {
+      await openDialog(page);
+      await selectWhere(page, HTTPS_REPO);
+      const section = onlineSection(page, 'origin');
+      await expect(section.locator('summary')).toHaveText('Online only: origin (0)', { timeout: 10_000 });
+      await section.locator('summary').click();
+      await expect(section.locator('.branch-card__line--error')).toContainText("Couldn't reach origin.", { timeout: 20_000 });
+      expect(posts.length).toBe(1);
+      expect(posts[0].body).toMatchObject({ path: HTTPS_REPO, fetch: true, remote: 'origin',
+        credHost: HTTPS_HOST, credUsername: 'e2e-user', credToken: 'e2e-secret-token' });
+      expect(posts[0].url).not.toContain('e2e-secret-token');
+      await expect(section.getByRole('button', { name: 'Retry' })).toBeVisible();
+    } finally {
+      await page.evaluate((host) => localStorage.removeItem('swe-swe-creds:' + host), HTTPS_HOST);
+    }
+  });
+
+  test('a new name that is already online picks the online branch instead', async ({ page }) => {
+    inCards('git push -q /tmp/e2e-cards-origin.git main:was-online');
+    try {
+      await openCardsRepo(page);
+      await page.fill('#new-session-branch', 'was-online');
+      await expect(page.locator('#branch-new-card')).toHaveClass(/branch-card--picked/);
+      await page.locator('.dialog__agent').first().click();
+      await page.click('#new-session-start-chat');
+      await expect(page.locator('#branch-cards-msg')).toContainText('"was-online" is already on origin.');
+      await expect(branchCard(page, 'was-online')).toHaveAttribute('aria-pressed', 'true');
+      expect(page.url()).not.toMatch(/\/session\//);
+    } finally {
+      inCards('git push -q /tmp/e2e-cards-origin.git :was-online; git update-ref -d refs/remotes/origin/was-online; true');
     }
   });
 
@@ -846,4 +951,66 @@ test.describe('new-session dialog', () => {
     expect(filtered.values).toEqual([LONGURL_REPO]);
     expect(filtered.highlighted).toBe(true);
   });
+
+  // Last: these start sessions, whose lingering processes can leave
+  // branches or folders in the cards repo for a moment after they end.
+  test('a new name not online starts right away after the check', async ({ page }) => {
+    const checks = [];
+    page.on('request', (req) => { if (req.url().includes('/api/repo/remote-branch')) checks.push(JSON.parse(req.postData() || '{}')); });
+    try {
+      await openCardsRepo(page);
+      await page.fill('#new-session-branch', 'brand-new-idea');
+      await page.locator('.dialog__agent').first().click();
+      await page.click('#new-session-start-chat');
+      await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
+      const url = new URL(page.url());
+      testSessions.push(url.pathname.split('/')[2]);
+      expect(url.searchParams.get('branch')).toBe('brand-new-idea');
+      expect(checks.map((c) => [c.remote, c.name])).toEqual([['origin', 'brand-new-idea']]);
+    } finally {
+      await endSessions(page, testSessions.splice(0));
+      await dropSessionBranch('brand-new-idea');
+    }
+  });
+
+  test('when the name check cannot reach the remote: Cancel, Back, Start anyway', async ({ page }) => {
+    let release;
+    const held = new Promise((resolve) => { release = resolve; });
+    let calls = 0;
+    await page.route('**/api/repo/remote-branch', async (route) => {
+      calls++;
+      if (calls === 1) { await held; return route.abort().catch(() => {}); }
+      return route.fulfill({ status: 502, contentType: 'application/json',
+        body: JSON.stringify({ error: "Couldn't reach origin to check if this name is taken." }) });
+    });
+    try {
+      await openCardsRepo(page);
+      await page.fill('#new-session-branch', 'offline-idea');
+      await page.locator('.dialog__agent').first().click();
+      await page.click('#new-session-start-chat');
+      const msg = page.locator('#branch-cards-msg');
+      await expect(msg).toContainText('Checking if "offline-idea" is already on origin...');
+      await expect(page.locator('#new-session-start-chat')).toHaveText('Checking origin...');
+      await expect(page.locator('#new-session-start-chat')).toBeDisabled();
+
+      await msg.getByRole('button', { name: 'Cancel' }).click();
+      await expect(msg).toContainText("Couldn't reach origin to check if this name is taken.");
+      await expect(page.locator('#new-session-start-chat')).toHaveText('Start Agent Chat');
+      await msg.getByRole('button', { name: 'Back' }).click();
+      await expect(msg).toHaveText('');
+
+      await page.click('#new-session-start-chat');
+      await expect(msg).toContainText("Couldn't reach origin to check if this name is taken.");
+      await msg.getByRole('button', { name: 'Start anyway' }).click();
+      await page.waitForURL(/\/session\/[a-f0-9-]{36}\?/, { timeout: 30_000 });
+      const url = new URL(page.url());
+      testSessions.push(url.pathname.split('/')[2]);
+      expect(url.searchParams.get('branch')).toBe('offline-idea');
+    } finally {
+      release();
+      await endSessions(page, testSessions.splice(0));
+      await dropSessionBranch('offline-idea');
+    }
+  });
+
 });

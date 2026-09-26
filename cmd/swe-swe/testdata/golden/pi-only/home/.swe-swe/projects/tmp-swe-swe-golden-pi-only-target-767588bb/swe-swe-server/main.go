@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -2896,6 +2897,10 @@ func main() {
 			handleBranchCheckAPI(w, r)
 			return
 		}
+		if r.URL.Path == "/api/repo/remote-branch" {
+			handleRemoteBranchAPI(w, r)
+			return
+		}
 		if r.URL.Path == "/api/repo/branch-check-all" {
 			handleBranchCheckAllAPI(w, r)
 			return
@@ -4524,6 +4529,9 @@ func listBranchNames(repoPath string) ([]string, error) {
 type branchesRequestBody struct {
 	Path         string `json:"path"`
 	Fetch        bool   `json:"fetch"`
+	// Remote, with Fetch: fetch only this remote (an online section the
+	// user expanded). Empty fetches every remote.
+	Remote       string `json:"remote"`
 	CredHost     string `json:"credHost"`
 	CredUsername string `json:"credUsername"`
 	CredToken    string `json:"credToken"`
@@ -4580,9 +4588,20 @@ func handleRepoBranchesAPI(w http.ResponseWriter, r *http.Request) {
 	warning := ""
 	if req.Fetch {
 		remoteOutput, err := exec.Command("git", "-C", repoPath, "remote").Output()
-		if err == nil && len(strings.TrimSpace(string(remoteOutput))) > 0 {
-			log.Printf("Fetching all for %s", repoPath)
-			if out, err := runBranchFetch(repoPath, req.CredHost, req.CredUsername, req.CredToken); err != nil {
+		remotes := strings.Fields(string(remoteOutput))
+		if req.Remote != "" && !slices.Contains(remotes, req.Remote) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "No such remote"})
+			return
+		}
+		if err == nil && len(remotes) > 0 {
+			if req.Remote != "" {
+				log.Printf("Fetching %s for %s", req.Remote, repoPath)
+			} else {
+				log.Printf("Fetching all for %s", repoPath)
+			}
+			if out, err := runBranchFetch(repoPath, req.Remote, req.CredHost, req.CredUsername, req.CredToken); err != nil {
 				log.Printf("Git fetch failed (continuing with cached): %v, output: %s", err, string(out))
 				warning = branchRefreshWarning(string(out), err, remoteHost)
 			}

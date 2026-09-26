@@ -32,6 +32,12 @@ import (
 // tests can shorten it.
 var branchFetchTimeout = 20 * time.Second
 
+// remoteFetchTimeout bounds a fetch of one remote (an online section the user
+// expanded) and the new-branch-name check. Short, because the user is
+// looking at a "Fetching..." line and can always Retry. Var so tests can
+// shorten it.
+var remoteFetchTimeout = 10 * time.Second
+
 // errBranchFetchTimeout marks a refresh cut off by branchFetchTimeout, so the
 // warning can say "timed out" instead of blaming credentials.
 var errBranchFetchTimeout = errors.New("branch fetch timed out")
@@ -88,21 +94,26 @@ func branchRefreshWarning(output string, err error, host string) string {
 // "Unable to fetch latest changes". Two overlap easily -- aborting the
 // browser's request does not stop the server's fetch, so reopening the dialog
 // or re-picking the repo starts a second one.
-func runBranchFetch(repoPath, credHost, credUsername, credToken string) ([]byte, error) {
+//
+// remote "" fetches every remote (bounded by branchFetchTimeout); a remote
+// name fetches only that one (bounded by remoteFetchTimeout). Calls share
+// only when both repo and remote match.
+func runBranchFetch(repoPath, remote, credHost, credUsername, credToken string) ([]byte, error) {
+	key := repoPath + "\x00" + remote
 	branchFetchMu.Lock()
-	if call, ok := branchFetchInFlight[repoPath]; ok {
+	if call, ok := branchFetchInFlight[key]; ok {
 		branchFetchMu.Unlock()
 		<-call.done
 		return call.out, call.err
 	}
 	call := &branchFetchCall{done: make(chan struct{})}
-	branchFetchInFlight[repoPath] = call
+	branchFetchInFlight[key] = call
 	branchFetchMu.Unlock()
 
-	call.out, call.err = runBranchFetchOnce(repoPath, credHost, credUsername, credToken)
+	call.out, call.err = runBranchFetchOnce(repoPath, remote, credHost, credUsername, credToken)
 
 	branchFetchMu.Lock()
-	delete(branchFetchInFlight, repoPath)
+	delete(branchFetchInFlight, key)
 	branchFetchMu.Unlock()
 	close(call.done)
 	return call.out, call.err
@@ -121,16 +132,19 @@ var (
 	branchFetchInFlight = map[string]*branchFetchCall{}
 )
 
-func runBranchFetchOnce(repoPath, credHost, credUsername, credToken string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), branchFetchTimeout)
+func runBranchFetchOnce(repoPath, remote, credHost, credUsername, credToken string) ([]byte, error) {
+	timeout, args := branchFetchTimeout, []string{"-C", repoPath, "fetch", "--all"}
+	if remote != "" {
+		timeout, args = remoteFetchTimeout, []string{"-C", repoPath, "fetch", remote}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken,
-		"-C", repoPath, "fetch", "--all")
+	out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken, args...)
 	if err != nil && ctx.Err() != nil {
 		return out, errBranchFetchTimeout
 	}
-	if err == nil {
+	if err == nil && (remote == "" || remote == "origin") {
 		saveOriginHead(ctx, repoPath, credHost, credUsername, credToken)
 	}
 	return out, err

@@ -1,7 +1,7 @@
 # Branch cards stop overloading the box; git runs one command at a time
 
 **Date**: 2026-09-25
-**Status**: Phase A DONE (branch feat/branch-list-only); B-E not started
+**Status**: Phases A and B DONE (branch feat/branch-list-only); C-E not started
 **Estimate**: about 2.5 days (A: 0.5, B: 0.5, C+D: 1.5)
 
 ## Why
@@ -158,6 +158,17 @@ until Phase B the online sections show whatever was last downloaded.
 2. Start with a new branch name -> ls-remote that name first (10 s, Cancel,
    "Start anyway" on failure). If it exists online, use the online branch.
 3. `make test`.
+
+Phase B result: every remote gets an online section (even with 0 cards) so
+it can be opened; opening downloads that remote only (`fetch <remote>`, 10 s,
+shared per repo+remote), once per dialog, failure + Retry inside the section.
+New endpoint POST /api/repo/remote-branch: `ls-remote --exit-code` then fetch
+of that one ref; 502 -> "Start anyway" / "Back". If the name is online the
+dialog re-lists and picks that online card; the user presses Start again.
+25/25 new-session-dialog e2e, twice in a row. Still open: "Clone external
+repository" on an already-cloned repo runs a blocking `fetch --all` in
+/api/repo/prepare (main.go, handleRepoPrepareAPI) -- the second of the two
+downloads seen in the incident logs.
 
 ## Phase C: runGit + linter in "report" mode
 
