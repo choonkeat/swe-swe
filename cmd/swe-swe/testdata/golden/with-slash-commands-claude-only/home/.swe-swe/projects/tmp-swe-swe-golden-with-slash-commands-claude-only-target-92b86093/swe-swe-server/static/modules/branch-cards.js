@@ -41,6 +41,25 @@ export function groupCards(data) {
     return g;
 }
 
+/**
+ * The groups with only the cards whose name holds `query` (any case), for
+ * "+ New branch" filtering the list as the user types. The workspace card
+ * always stays: it is the way back. An empty query changes nothing.
+ */
+export function filterGroups(g, query) {
+    const q = (query || '').trim().toLowerCase();
+    if (!g || !q) return g;
+    const hit = (s) => (s || '').toLowerCase().includes(q);
+    return {
+        workspace: g.workspace,
+        local: g.local.filter((c) => hit(c.name)),
+        leftovers: g.leftovers.filter((l) => hit(l.folder)),
+        // "origin/foo" still finds origin's foo, as resolveTyped picks it.
+        online: g.online.map((o) => ({ remote: o.remote, cards: o.cards.filter((c) => hit(c.name) || hit(o.remote + '/' + c.name)) })),
+        filtered: true,
+    };
+}
+
 /** The workspace card's title: it names the branch the checkout is on. */
 export function workspaceTitle(card) {
     return 'Workspace (' + ((card && card.name) ? card.name + ' branch' : 'no branch') + ')';
@@ -173,7 +192,7 @@ export function resolveTyped(text, data) {
     if (onlineHit) {
         return { pick: { kind: 'online', remote: onlineHit.remote, name }, message: '"' + name + '" is already online. Picked it for you.' };
     }
-    return { pick: { kind: 'new', name }, message: '' };
+    return { pick: { kind: 'new', name }, message: 'Start makes a new branch "' + name + '".' };
 }
 
 /**

@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, nameCheckRemote, cardTags, workspaceTitle, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, nameCheckRemote, cardTags, workspaceTitle, filterGroups, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -168,7 +168,7 @@ test('resolveTyped: a bare online-only name picks its online card, origin first'
 test('resolveTyped: anything else is a new branch', () => {
     const r = resolveTyped(' fresh-idea ', reply());
     assert.deepStrictEqual(r.pick, { kind: 'new', name: 'fresh-idea' });
-    assert.strictEqual(r.message, '');
+    assert.strictEqual(r.message, 'Start makes a new branch "fresh-idea".');
 });
 
 // Start sends exactly what the old dropdown sent.
@@ -248,4 +248,30 @@ test('withoutDeleted: a deleted branch no longer counts as existing', () => {
     const out = withoutDeleted(data, { [localKey('a')]: { state: 'deleted' } });
     assert.deepStrictEqual(out.cards.map((c) => c.name), ['b']);
     assert.strictEqual(resolveTyped('a', out).pick.kind, 'new');
+});
+
+test('filterGroups: keeps cards whose name holds the text, any case', () => {
+    const g = {
+        workspace: { kind: 'workspace', name: 'main' },
+        local: [{ kind: 'local', name: 'fix-height' }, { kind: 'local', name: 'Fix-Scroll' }, { kind: 'local', name: 'backup' }],
+        leftovers: [{ folder: '/w/fix-old' }, { folder: '/w/other' }],
+        online: [{ remote: 'origin', cards: [{ kind: 'online', name: 'fix-net' }, { kind: 'online', name: 'docs' }] }],
+    };
+    const f = filterGroups(g, ' FIX ');
+    assert.strictEqual(f.workspace, g.workspace);
+    assert.deepStrictEqual(f.local.map((c) => c.name), ['fix-height', 'Fix-Scroll']);
+    assert.deepStrictEqual(f.leftovers.map((l) => l.folder), ['/w/fix-old']);
+    assert.deepStrictEqual(f.online, [{ remote: 'origin', cards: [{ kind: 'online', name: 'fix-net' }] }]);
+    assert.strictEqual(f.filtered, true);
+});
+
+test('filterGroups: "<remote>/<name>" finds that online card', () => {
+    const g = { workspace: null, local: [], leftovers: [], online: [{ remote: 'origin', cards: [{ kind: 'online', name: 'foo' }] }, { remote: 'upstream', cards: [{ kind: 'online', name: 'foo' }] }] };
+    assert.deepStrictEqual(filterGroups(g, 'origin/foo').online.map((o) => o.cards.length), [1, 0]);
+});
+
+test('filterGroups: empty text or no groups changes nothing', () => {
+    const g = { workspace: null, local: [], leftovers: [], online: [] };
+    assert.strictEqual(filterGroups(g, '  '), g);
+    assert.strictEqual(filterGroups(null, 'x'), null);
 });

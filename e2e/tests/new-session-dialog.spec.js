@@ -375,7 +375,7 @@ test.describe('new-session dialog', () => {
     inCards('for i in 1 2 3 4 5 6; do git branch tip-$i; done');
     try {
       await openCardsRepo(page);
-      const tip = page.locator('#branch-card-workspace-slot .branch-cards__tip');
+      const tip = page.locator('#branch-cards-sections .branch-cards__tip');
       await expect(tip).toContainText('10 branches and folders here.');
       await expect(tip.locator('.branch-cards__tip-prompt-text')).toHaveText("Discuss: which worktrees & branches can we clean up?");
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
@@ -535,23 +535,25 @@ test.describe('new-session dialog', () => {
     await expect(page.locator('#branch-cards-sections button.branch-card:disabled'))
       .toContainText(`${CARDS_WORKTREES}/stray`);
 
-    // Order: workspace, the branches, leftovers, online groups, then
-    // "+ New" last.
+    // Order: workspace, "+ New" (it filters what follows), then the
+    // branches, leftovers and online groups.
     const order = await page.evaluate(() => {
-      const cards = document.getElementById('branch-cards');
       const newCard = document.getElementById('branch-new-card');
+      const slot = document.getElementById('branch-card-workspace-slot');
       const sections = document.getElementById('branch-cards-sections');
       return {
-        branchesBeforeNew: !!(sections.compareDocumentPosition(newCard) & Node.DOCUMENT_POSITION_FOLLOWING),
-        firstAfterWorkspace: sections.querySelector('.branch-card__name').textContent,
-        lastChild: cards.lastElementChild.previousElementSibling.id,
+        newAfterWorkspace: !!(slot.compareDocumentPosition(newCard) & Node.DOCUMENT_POSITION_FOLLOWING),
+        newBeforeBranches: !!(newCard.compareDocumentPosition(sections) & Node.DOCUMENT_POSITION_FOLLOWING),
+        firstBranch: sections.querySelector('.branch-card__name').textContent,
       };
     });
-    expect(order).toEqual({ branchesBeforeNew: true, firstAfterWorkspace: 'feat-a', lastChild: 'branch-new-card' });
+    expect(order).toEqual({ newAfterWorkspace: true, newBeforeBranches: true, firstBranch: 'feat-a' });
 
-    // Keyboard: from the workspace card, down goes straight to the first
-    // branch card; Enter picks it.
+    // Keyboard: from the workspace card, down goes to "+ New", then to the
+    // first branch card; Enter picks it.
     await ws.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#new-session-branch')).toBeFocused();
     await page.keyboard.press('ArrowDown');
     await expect(branchCard(page, 'feat-a')).toBeFocused();
     await page.keyboard.press('Enter');
@@ -581,6 +583,16 @@ test.describe('new-session dialog', () => {
     await page.fill('#new-session-branch', 'feat-a');
     await expect(msg).toContainText('already on this box');
     await expect(branchCard(page, 'feat-a')).toHaveAttribute('aria-pressed', 'true');
+
+    // Typing filters the lists; the workspace card always stays.
+    await page.fill('#new-session-branch', 'feat');
+    await expect(branchCard(page, 'feat-a')).toBeVisible();
+    await expect(branchCard(page, 'feat-b')).toBeVisible();
+    await expect(branchCard(page, 'origin/typo')).toHaveCount(0);
+    await expect(page.locator('#branch-card-workspace-slot .branch-card')).toBeVisible();
+    await expect(msg).toContainText('Start makes a new branch "feat".');
+    await page.fill('#new-session-branch', '');
+    await expect(page.locator('#branch-cards-sections .branch-cards__section').first()).toBeVisible();
 
     await page.fill('#new-session-branch', 'origin/foo');
     await expect(msg).toContainText('already online');

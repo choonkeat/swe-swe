@@ -59,7 +59,7 @@
     // swaps in a branch-specific hint (see applyPendingPrefill).
     var DEFAULT_BRANCH_PLACEHOLDER = branchInput ? branchInput.placeholder : '';
     var BRANCH_LABEL = branchLabel ? branchLabel.textContent : '';
-    var NEW_BRANCH_PLACEHOLDER = 'New branch name';
+    var NEW_BRANCH_PLACEHOLDER = 'Find or name a new branch';
     function setBranchPlaceholder(text) {
         if (branchInput) branchInput.placeholder = text;
     }
@@ -1105,7 +1105,9 @@
         if (!dialogState.cardsOn) return;
         var bc = window.branchCards;
         var data = dialogState.branchData;
-        var g = bc.groupCards(data);
+        var all = bc.groupCards(data);
+        // Typing in "+ New branch" narrows every list below it.
+        var g = bc.filterGroups(all, branchInput.value);
         var pick = dialogState.branchPick;
         var states = dialogState.cardStates;
         // Re-drawing replaces the buttons; keep keyboard focus where it was.
@@ -1130,9 +1132,10 @@
                 pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
             }));
         }
-        var tip = bc.cleanupTip(g);
+        var tip = bc.cleanupTip(all);
+        var tipEl = null;
         if (tip) {
-            var tipEl = el('div', 'branch-cards__tip');
+            tipEl = el('div', 'branch-cards__tip');
             tipEl.appendChild(el('div', 'branch-cards__tip-text', tip.text));
             var promptEl = el('div', 'branch-cards__tip-prompt');
             promptEl.appendChild(el('span', 'branch-cards__tip-prompt-text', tip.prompt));
@@ -1146,12 +1149,12 @@
             copyBtn.setAttribute('aria-label', 'Copy the clean-up prompt');
             promptEl.appendChild(copyBtn);
             tipEl.appendChild(promptEl);
-            branchWorkspaceSlot.appendChild(tipEl);
         }
         branchNewCard.classList.toggle('branch-card--picked',
             !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
 
         var frag = document.createDocumentFragment();
+        if (tipEl && !g.filtered) frag.appendChild(tipEl);
         // Branches on this box follow the workspace card directly, with no
         // heading: the workspace is on this box too.
         if (g.local.length) {
@@ -1193,14 +1196,18 @@
             });
         }
         g.online.forEach(function(group) {
+            // While filtering, a remote with no match is hidden and one with
+            // matches is shown open (without remembering it as opened).
+            if (g.filtered && !group.cards.length) return;
             var details = document.createElement('details');
             details.className = 'branch-cards__online';
-            details.open = !!dialogState.openRemotes[group.remote];
+            details.open = !!dialogState.openRemotes[group.remote] || !!g.filtered;
             // Opening a section is what downloads that remote, once per
             // dialog; after a failure only Retry downloads again. Setting
             // .open while re-drawing also fires this, which the state check
             // turns into a no-op.
             details.addEventListener('toggle', function() {
+                if (g.filtered) return;
                 dialogState.openRemotes[group.remote] = details.open;
                 if (details.open && !dialogState.remoteFetches[group.remote]) fetchRemote(group.remote);
             });
@@ -1267,7 +1274,7 @@
             dialogState.selectedBranch = prefill.branch;
             if (dialogState.cardsOn) {
                 onBranchTyped();
-                // "+ New" sits below every branch card; show what Start will use.
+                // Show what Start will use.
                 var p = dialogState.branchPick;
                 if (p && (p.kind === 'new' || p.kind === 'blocked') && branchNewCard.scrollIntoView) {
                     branchNewCard.scrollIntoView({ block: 'nearest' });

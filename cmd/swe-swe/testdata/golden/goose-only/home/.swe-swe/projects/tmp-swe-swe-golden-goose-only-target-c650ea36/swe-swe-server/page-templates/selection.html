@@ -2031,14 +2031,15 @@
                         <label class="dialog__label" id="branch-label">Branch (optional)</label>
                         <div class="branch-cards" id="branch-cards" role="group" aria-labelledby="branch-label">
                             <div id="branch-card-workspace-slot"></div>
-                            <div id="branch-cards-sections"></div>
-                            <!-- Last: "+ New" is the "or make something new" choice,
-                                 after every place that already exists. -->
+                            <!-- Right under the workspace: "+ New" is never lost below a
+                                 long list, and typing in it filters the cards below
+                                 (mockups/lo-fi/2026-09/26-new-session-new-branch-placement.html). -->
                             <div class="branch-card branch-card--new" id="branch-new-card">
                                 <span class="branch-card__plus" id="branch-new-plus" hidden>+</span>
                                 <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" autocomplete="off" disabled>
                             </div>
                             <div class="branch-cards__msg" id="branch-cards-msg" aria-live="polite"></div>
+                            <div id="branch-cards-sections"></div>
                         </div>
                         <datalist id="branch-list"></datalist>
                     </div>
