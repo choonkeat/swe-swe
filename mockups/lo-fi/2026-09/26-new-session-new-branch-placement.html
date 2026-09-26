@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - New branch placement</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- this sketch --- */
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;}
+  .card{border:1px solid var(--line);border-radius:3px;background:#fff;padding:9px 12px;margin:5px 0;font-size:13px;}
+  .card.picked{border-width:2px;border-color:var(--ink);}
+  .card.new{border-style:dashed;}
+  .card .scribble{margin:3px 0;}
+  .group{font-size:11px;color:var(--grey);margin:12px 0 2px;}
+  .hl{outline:2px dashed var(--ink);outline-offset:3px;}
+  .sub{font-size:12px;font-weight:600;margin:14px 0 2px;}
+  .verdict{margin-top:10px;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>New Session: "+ New branch" at the top, filters as you type</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only. Option A chosen; dashed outline = the name box.</p>
+
+  <div class="cols">
+
+    <!-- 1: nothing typed -->
+    <div class="box">
+      <div class="label">State 1</div>
+      <div class="title">Nothing typed</div>
+      <div class="group">Branch</div>
+      <div class="card picked">Workspace (main branch)</div>
+      <div class="card new hl">+ <span class="input">find or name a new branch</span></div>
+      <div class="card">backup-pre-scrub</div>
+      <div class="card">feat-conversation-context-only</div>
+      <div class="card">fix-height</div>
+      <div class="card">fix-scroll</div>
+      <div class="group">Leftover folders (1)</div>
+      <div class="card"><div class="scribble mid"></div></div>
+      <div class="group">&#9656; Online only (0)</div>
+      <div class="verdict note">Every card shows. Workspace stays picked.</div>
+    </div>
+
+    <!-- 2: partial match -->
+    <div class="box">
+      <div class="label">State 2</div>
+      <div class="title">Typed "fix"</div>
+      <div class="group">Branch</div>
+      <div class="card">Workspace (main branch)</div>
+      <div class="card new hl">+ fix<span class="input" style="min-width:40px"></span></div>
+      <div class="card">fix-height</div>
+      <div class="card">fix-scroll</div>
+      <div class="card new picked">Create new branch "fix"</div>
+      <div class="group">Leftover folders, Online only: filtered the same way (hidden when empty)</div>
+      <div class="verdict note">Only matching cards stay. The last line offers to make "fix" as a new branch, and is picked until you tap a card.</div>
+    </div>
+
+    <!-- 3: exact match -->
+    <div class="box">
+      <div class="label">State 3</div>
+      <div class="title">Typed "fix-height" (already exists)</div>
+      <div class="group">Branch</div>
+      <div class="card">Workspace (main branch)</div>
+      <div class="card new hl">+ fix-height<span class="input" style="min-width:20px"></span></div>
+      <div class="card picked">fix-height</div>
+      <div class="note">"fix-height" already exists. Picked it for you.</div>
+      <div class="verdict note">No "Create new" line: that name is taken. Same rule the dialog has today.</div>
+    </div>
+
+  </div>
+
+  <div class="box" style="margin-top:18px">
+    <div class="label">Rules</div>
+    <div class="title">What the box does</div>
+    <div class="flow">
+      <div class="card new node">type</div>
+      <span class="arrow">&rarr;</span>
+      <div class="diamond"><span>exact name exists?</span></div>
+      <span class="arrow">&rarr;</span>
+      <div class="note" style="max-width:420px">yes: pick that card, no "Create" line<br>no: list the matches + "Create new branch ..." (picked)<br>clear the box: all cards back, Workspace picked again</div>
+    </div>
+    <p class="note">Workspace card never hides, so there is always a way back. Start button stays where it is.</p>
+  </div>
+</div>
+</body>
+</html>
