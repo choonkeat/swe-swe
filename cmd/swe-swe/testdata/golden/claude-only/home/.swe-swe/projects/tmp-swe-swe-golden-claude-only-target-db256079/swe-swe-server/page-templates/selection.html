@@ -1388,16 +1388,10 @@
             align-items: center;
             margin-top: 24px;
             gap: 12px;
-            /* Pinned to the bottom of the scroll box so the Start buttons are
-               always on screen. Without this, a phone viewport clips them below
-               the fold -- and because the page body itself does not scroll,
-               nothing tells the user there is more dialog down there. The
-               negative offsets cancel .dialog's 24px padding so the bar sits
-               flush and its background hides content scrolling underneath. */
-            position: sticky;
-            bottom: -24px;
-            background: var(--bg-secondary);
-            padding: 12px 0 24px;
+            /* Not pinned to the bottom: Start can't be pressed until an agent
+               is picked, and the agent picker sits above this footer, so a
+               pinned Start only covered the branch list with a button that
+               did nothing. Scrolling down to Agent brings Start with it. */
             margin-bottom: -24px;
         }
         .dialog__error {

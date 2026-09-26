@@ -31,9 +31,11 @@ import (
 	"time"
 )
 
-// branchCheckTimeout bounds each git call of a check. Var so tests can
-// shorten it.
-var branchCheckTimeout = 5 * time.Second
+// branchCheckTimeout bounds each git call of a check. Only the picked card
+// is checked now (the user is watching "Checking..."), so it can afford to
+// wait: 5 s cut off `git status` on a 1.4 GB branch folder, which then
+// showed "Couldn't check what would be lost". Var so tests can shorten it.
+var branchCheckTimeout = 30 * time.Second
 
 // branchCheckParallel caps how many checks run at once for check-all.
 const branchCheckParallel = 4

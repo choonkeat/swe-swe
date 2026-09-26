@@ -1,7 +1,7 @@
 # Branch cards stop overloading the box; git runs one command at a time
 
 **Date**: 2026-09-25
-**Status**: Phases A-D DONE (branch feat/branch-list-only); E not started
+**Status**: DONE, phases A-E (2026-09-26)
 **Estimate**: about 2.5 days (A: 0.5, B: 0.5, C+D: 1.5)
 
 ## Why
@@ -222,3 +222,20 @@ long worktree remove can make a listing on the same project fail.
 5. Expand an online section with the network blocked: "[Retry]" within 10 s.
    Start a new branch with the network blocked: "Start anyway" within 10 s.
 6. Open New Session on another repo during step 4: normal speed.
+
+Phase E result (e2e/tests/git-load.spec.js, opt-in E2E_GIT_LOAD=1; a git
+wrapper in /usr/local/bin logs every call; repo with 91 local branches, 40
+branch folders, 5 of them with 50k ignored files; simple-mode container):
+
+| Check | Result |
+|---|---|
+| Open New Session | 10 git commands (was ~180), listed in 189 ms, never 2 at once |
+| Pick through 10 cards | 60 git commands (6 per check), never 2 at once. Each check finished before the next click, so the drop path was not exercised here (new-session-dialog.spec.js covers it with a held request) |
+| Delete 5 big folders back to back | 10.4 s total, ~1.5 s each, one at a time; box-wide open files 6688-6848 |
+| Other project opened during the deletes | 280 ms |
+| Same project listed during the deletes | 200 after 5.2 s (waited in line); would fail past gitRead's 10 s with bigger folders |
+| Unreachable remote: section / name check | gave up after 11.2 s / 11.1 s (10 s limit + kill + request) |
+
+Open follow-up: the same-project listing's wait counts against gitRead's
+10 s. If that bites, give listing reads a longer wait-in-line allowance than
+run time.
