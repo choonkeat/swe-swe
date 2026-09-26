@@ -21,8 +21,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"syscall"
-	"time"
 )
 
 // cloneNeedsAuth reports whether git's combined output indicates an HTTPS
@@ -74,25 +72,6 @@ func gitCredHelperEnv(base []string) []string {
 		"GIT_CONFIG_VALUE_0=swe-swe",
 		"GIT_TERMINAL_PROMPT=0",
 	)
-}
-
-// killGitGroupOnCancel makes a cancelled context actually stop git. Killing
-// only the direct child is not enough: `git fetch` spawns helpers
-// (git-remote-https and its curl) that inherit the output pipes, so Wait would
-// keep blocking on a stalled grandchild long after git itself is gone. Put the
-// whole thing in its own process group, SIGKILL the group on cancel, and cap
-// the post-kill wait so an inherited pipe can never hold the caller.
-// No-op for a background (never-cancelled) context.
-func killGitGroupOnCancel(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		// Negative pid: signal the group. Setpgid above makes pgid == pid.
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
-	cmd.WaitDelay = 2 * time.Second
 }
 
 // runGitWithTransientCred runs `git args...` with a short-lived, per-call
