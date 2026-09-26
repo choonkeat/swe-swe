@@ -1,6 +1,6 @@
 # Multi-agent smoke test: fixes
 
-## Status: IN PROGRESS - fixes 1 and 2 done
+## Status: IN PROGRESS - fixes 1 and 2 done and verified live
 
 ## Context
 
@@ -50,8 +50,9 @@ gave up waiting, and no message was lost.
 
 ### 2. Codex stops waiting for a chat reply after 5 minutes
 
-**DONE**; `codex mcp get` (0.157.1) confirms both the TOML and `-c` forms
-parse. Not yet retested live (needs a reboot + a 6-minute wait).
+**DONE** in b0ebe9035; verified live after reboot 2026-09-26: Codex sat in
+`send_message` for 7m14s with no timeout, then the next chat message was
+consumed by that same `send_message` call and it answered.
 
 - **Where:** `cmd/swe-swe/mcpspec.go:186` (`mcpCodexTOML`) and `:208`
   (`mcpCodexFlags`)
