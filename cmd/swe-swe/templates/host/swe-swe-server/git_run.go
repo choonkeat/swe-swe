@@ -60,6 +60,32 @@ type gitCall struct {
 
 var errGitNoDeadline = errors.New("runGit: ctx has no deadline")
 
+// Time limits for callers that have no deadline of their own.
+const (
+	// gitReadTimeout: commands that only look (rev-parse, remote, status).
+	gitReadTimeout = 10 * time.Second
+	// gitWriteTimeout: commands that change the repo and may touch many
+	// files (worktree add/remove, checkout, commit).
+	gitWriteTimeout = 5 * time.Minute
+	// gitCloneTimeout: a clone or download of a whole repo.
+	gitCloneTimeout = 30 * time.Minute
+)
+
+// gitRead runs a local, look-only git command in dir (stdout only).
+func gitRead(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitReadTimeout)
+	defer cancel()
+	return runGit(ctx, gitCall{Dir: dir, Args: args})
+}
+
+// gitWrite runs a local git command that changes the repo (stdout and
+// stderr combined, for error messages).
+func gitWrite(dir string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitWriteTimeout)
+	defer cancel()
+	return runGit(ctx, gitCall{Dir: dir, Args: args, Combined: true})
+}
+
 // gitSlowWait / gitSlowRun: calls that wait or run longer than these are
 // logged, so a pile-up shows in the logs.
 const (

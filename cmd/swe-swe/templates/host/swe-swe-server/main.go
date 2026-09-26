@@ -4315,7 +4315,7 @@ func handleRepoPrepareClone(w http.ResponseWriter, url, credHost, credUsername, 
 			return
 		}
 
-		output, err := runGitWithTransientCred(credHost, credUsername, credToken, "clone", url, repoPath)
+		output, err := runGitWithTransientCred(repoBase, credHost, credUsername, credToken, "clone", url, repoPath)
 		if err != nil {
 			log.Printf("Git clone failed: %v, output: %s", err, string(output))
 			if cloneNeedsAuth(string(output)) {
@@ -10606,14 +10606,14 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 			repoBase := filepath.Join(reposDir, sanitizedURL)
 			repoPath := filepath.Join(repoBase, "workspace")
 			if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "-C", repoPath, "fetch", "--all"); err != nil {
+				if out, err := runGitWithTransientCred(repoPath, args.CredHost, args.CredUsername, args.CredToken, "fetch", "--all"); err != nil {
 					return nil, nil, fmt.Errorf("git fetch failed: %s", string(out))
 				}
 			} else {
 				if err := os.MkdirAll(repoBase, 0755); err != nil {
 					return nil, nil, fmt.Errorf("failed to create directory: %w", err)
 				}
-				if out, err := runGitWithTransientCred(args.CredHost, args.CredUsername, args.CredToken, "clone", args.URL, repoPath); err != nil {
+				if out, err := runGitWithTransientCred(repoBase, args.CredHost, args.CredUsername, args.CredToken, "clone", args.URL, repoPath); err != nil {
 					return nil, nil, fmt.Errorf("git clone failed: %s", string(out))
 				}
 			}

@@ -19,13 +19,7 @@ import (
 // file goes below, lower its number here so it can't creep back up. Phase D
 // ends with this map empty.
 var gitStartsNotYetMoved = map[string]int{
-	"branch_cards.go":      1,
-	"branch_check.go":      1,
-	"branch_delete.go":     2,
-	"branch_refresh.go":    1,
-	"clone_cred.go":        2,
 	"main.go":              27,
-	"remote_branch.go":     1,
 	"session_gitconfig.go": 3,
 }
 
