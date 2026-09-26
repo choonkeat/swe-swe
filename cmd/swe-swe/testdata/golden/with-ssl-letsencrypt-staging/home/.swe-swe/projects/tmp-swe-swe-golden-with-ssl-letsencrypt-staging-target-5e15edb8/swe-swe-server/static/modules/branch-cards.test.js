@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { groupCards, nameCheckRemote, cardTags, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
+import { groupCards, nameCheckRemote, cardTags, workspaceTitle, cleanupTip, CLEANUP_TIP_MIN, needsPickCheck, formatBytes, checkSummary, resolveTyped, branchValueFor, samePick } from './branch-cards.js';
 
 // A /api/repo/branches reply shaped like screen A of the sketch.
 function reply(overrides) {
@@ -108,11 +108,17 @@ test('checkSummary: what deleting would lose, then the folder size', () => {
     assert.deepStrictEqual(checkSummary(null), { text: '', risky: false });
 });
 
-test('cardTags: workspace shows its branch, and "not main" when off the default', () => {
+test('cardTags: workspace shows "not main" only when off the default', () => {
     const d = reply();
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'main' }, d), ['on: main']);
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'feat/x', notDefault: true }, d), ['on: feat/x', 'not main']);
-    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: '', notDefault: true }, d), ['on: no branch', 'not main']);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'main' }, d), []);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: 'feat/x', notDefault: true }, d), ['not main']);
+    assert.deepStrictEqual(cardTags({ kind: 'workspace', name: '', notDefault: true }, d), ['not main']);
+});
+
+test('workspaceTitle: names the branch the workspace is on', () => {
+    assert.strictEqual(workspaceTitle({ kind: 'workspace', name: 'main' }), 'Workspace (main branch)');
+    assert.strictEqual(workspaceTitle({ kind: 'workspace', name: 'feat/x' }), 'Workspace (feat/x branch)');
+    assert.strictEqual(workspaceTitle({ kind: 'workspace', name: '' }), 'Workspace (no branch)');
 });
 
 // Screen D: "+ New branch" only makes something new.
@@ -123,7 +129,7 @@ test('resolveTyped: empty text changes nothing', () => {
 test('resolveTyped: the workspace branch picks the workspace card', () => {
     const r = resolveTyped('main', reply());
     assert.deepStrictEqual(r.pick, { kind: 'workspace' });
-    assert.match(r.message, /workspace as it is/);
+    assert.match(r.message, /workspace's branch/);
 });
 
 test('resolveTyped: an existing branch on this box picks its card', () => {

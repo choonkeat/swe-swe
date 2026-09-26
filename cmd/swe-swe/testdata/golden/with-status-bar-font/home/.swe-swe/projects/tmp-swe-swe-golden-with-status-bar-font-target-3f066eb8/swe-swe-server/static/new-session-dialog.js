@@ -1126,7 +1126,7 @@
             }
             var wsTags = bc.cardTags(g.workspace, data);
             if (g.workspace.inUse) wsTags.push('in use');
-            branchWorkspaceSlot.appendChild(makeBranchCard('Workspace as it is', {
+            branchWorkspaceSlot.appendChild(makeBranchCard(bc.workspaceTitle(g.workspace), {
                 pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
             }));
         }

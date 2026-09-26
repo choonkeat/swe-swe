@@ -522,8 +522,7 @@ test.describe('new-session dialog', () => {
     await openCardsRepo(page);
 
     const ws = page.locator('#branch-card-workspace-slot .branch-card');
-    await expect(ws).toContainText('Workspace as it is');
-    await expect(ws).toContainText('on: main');
+    await expect(ws).toContainText('Workspace (main branch)');
     await expect(ws).toHaveAttribute('aria-pressed', 'true');
 
     const sections = page.locator('#branch-cards-sections .branch-cards__section');
@@ -576,7 +575,7 @@ test.describe('new-session dialog', () => {
     const msg = page.locator('#branch-cards-msg');
 
     await page.fill('#new-session-branch', 'main');
-    await expect(msg).toContainText('is the workspace as it is');
+    await expect(msg).toContainText("is the workspace's branch");
     await expect(page.locator('#branch-card-workspace-slot .branch-card')).toHaveAttribute('aria-pressed', 'true');
 
     await page.fill('#new-session-branch', 'feat-a');
@@ -722,7 +721,7 @@ test.describe('new-session dialog', () => {
 
       await openCardsRepo(page);
       const ws = page.locator('#branch-card-workspace-slot');
-      await expect(ws).toContainText('on: side');
+      await expect(ws).toContainText('Workspace (side branch)');
       await expect(ws).toContainText('not main');
       await expect(ws.getByRole('button', { name: 'Switch back to main' })).toBeDisabled();
 
@@ -733,7 +732,7 @@ test.describe('new-session dialog', () => {
       }, { timeout: 30_000 }).toBe(false);
       await openCardsRepo(page);
       await page.locator('#branch-card-workspace-slot').getByRole('button', { name: 'Switch back to main' }).click();
-      await expect(page.locator('#branch-card-workspace-slot')).toContainText('on: main');
+      await expect(page.locator('#branch-card-workspace-slot')).toContainText('Workspace (main branch)');
       await expect(branchCard(page, 'side')).toBeVisible();
       expect(inCards('git symbolic-ref --short HEAD')).toBe('main');
     } finally {

@@ -41,12 +41,16 @@ export function groupCards(data) {
     return g;
 }
 
+/** The workspace card's title: it names the branch the checkout is on. */
+export function workspaceTitle(card) {
+    return 'Workspace (' + ((card && card.name) ? card.name + ' branch' : 'no branch') + ')';
+}
+
 /** The small tags a card shows. */
 export function cardTags(card, data) {
     const tags = [];
     const def = (data && data.defaultBranch) || 'main';
     if (card.kind === 'workspace') {
-        tags.push('on: ' + (card.name || 'no branch'));
         if (card.notDefault) tags.push('not ' + def);
         return tags;
     }
@@ -138,7 +142,7 @@ export function resolveTyped(text, data) {
 
     const onBox = (n) => {
         if (workspace && workspace.name === n) {
-            return { pick: { kind: 'workspace' }, message: '"' + n + '" is the workspace as it is. Picked that card for you.' };
+            return { pick: { kind: 'workspace' }, message: '"' + n + '" is the workspace\'s branch. Picked that card for you.' };
         }
         if (local(n)) {
             return { pick: { kind: 'local', name: n }, message: '"' + n + '" is already on this box. Picked that card for you.' };
