@@ -4298,22 +4298,13 @@ func handleRepoPrepareClone(w http.ResponseWriter, url, credHost, credUsername, 
 
 	justCloned := false
 
-	// Check if already cloned
+	// Already cloned: use it as it is. No download here -- this used to run
+	// a blocking `fetch --all` with no time limit before the dialog could
+	// continue, and on a large repo it was half of the burst that exhausted a
+	// box's open files. The dialog's online sections download their own
+	// remote when opened (10 s limit, Retry).
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
-		// Already cloned, fetch instead (but still hard fail for clone mode)
-		log.Printf("Repository already exists at %s, fetching", repoPath)
-		output, err := runGitWithTransientCred(credHost, credUsername, credToken, "-C", repoPath, "fetch", "--all")
-		if err != nil {
-			log.Printf("Git fetch failed: %v, output: %s", err, string(output))
-			if cloneNeedsAuth(string(output)) {
-				writeCloneAuthNeeded(w, credHost)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("Git fetch failed: %s", string(output))})
-			return
-		}
+		log.Printf("Repository already exists at %s, using it without downloading", repoPath)
 	} else {
 		// Clone the repo
 		log.Printf("Cloning %s to %s", url, repoPath)

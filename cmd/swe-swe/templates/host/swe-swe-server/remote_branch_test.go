@@ -85,3 +85,29 @@ func TestRunBranchFetchOneRemote(t *testing.T) {
 		t.Error("fetching origin also downloaded other")
 	}
 }
+
+// Picking an already-cloned repo via "Clone external repository" must not
+// download anything: the old blocking `fetch --all` had no time limit and
+// hard-failed on an unreachable remote.
+func TestPrepareCloneOfExistingRepoDoesNotDownload(t *testing.T) {
+	root := t.TempDir()
+	old := reposDir
+	reposDir = root
+	t.Cleanup(func() { reposDir = old })
+
+	url := "https://example.invalid/acme/private.git"
+	repo := filepath.Join(root, sanitizeRepoURL(url), "workspace")
+	gitT(t, root, "init", "-q", "-b", "main", repo)
+	gitT(t, repo, "remote", "add", "origin", url)
+
+	rec := httptest.NewRecorder()
+	handleRepoPrepareClone(rec, url, "", "", "")
+	var resp map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &resp)
+	if rec.Code != http.StatusOK || resp["error"] != nil || resp["path"] != repo {
+		t.Fatalf("status %d, reply %v; want 200 with path %s", rec.Code, resp, repo)
+	}
+	if resp["justCloned"] != false || resp["hasRemote"] != true {
+		t.Errorf("reply %v; want justCloned=false, hasRemote=true", resp)
+	}
+}
