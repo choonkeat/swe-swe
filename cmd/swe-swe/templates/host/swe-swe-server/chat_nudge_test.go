@@ -43,10 +43,14 @@ func TestWakeAgentForQueuedChatTypesNudgeWhenNobodyIsWaiting(t *testing.T) {
 	t.Cleanup(func() { chatNudgeDelay = 4 * time.Second })
 
 	swapOrchestrator(t, func(_ int, tool string, _ any) (string, error) {
-		if tool != "agent_waiting" {
-			t.Errorf("unexpected orchestrator tool %q", tool)
+		switch tool {
+		case "agent_waiting":
+			return `{"waiting":false}`, nil
+		case "get_chat_history":
+			return historyWithUnreadMessage, nil
 		}
-		return `{"waiting":false}`, nil
+		t.Errorf("unexpected orchestrator tool %q", tool)
+		return "", nil
 	})
 
 	sess, collect := nudgeSession(t)
@@ -76,6 +80,79 @@ func TestWakeAgentForQueuedChatStaysQuietWhenAgentIsParked(t *testing.T) {
 
 	if got := collect(); got != "" {
 		t.Errorf("nudged a parked agent, typed %q", got)
+	}
+}
+
+const historyWithUnreadMessage = `[` +
+	`{"type":"userMessage","seq":1,"id":"u1","text":"hi"},` +
+	`{"type":"userMessagesConsumed","seq":2,"ids":["u1"]},` +
+	`{"type":"userMessage","seq":3,"id":"u2","text":"run /ck:run-marp"}]`
+
+// The smoke-test failure: a message pushed while the agent was parked is handed
+// to it at once, so 4s later the agent is busy working on it and no longer
+// parked. Typing check_messages then made pi drop the task to report "No
+// pending chat messages". What matters is whether the message is still unread.
+func TestWakeAgentForQueuedChatStaysQuietWhenMessageWasAlreadyPickedUp(t *testing.T) {
+	chatNudgeDelay = 10 * time.Millisecond
+	t.Cleanup(func() { chatNudgeDelay = 4 * time.Second })
+
+	swapOrchestrator(t, func(_ int, tool string, _ any) (string, error) {
+		if tool == "get_chat_history" {
+			return `[` +
+				`{"type":"userMessage","seq":1,"id":"u1","text":"run /ck:run-marp"},` +
+				`{"type":"userMessagesConsumed","seq":2,"ids":["u1"]},` +
+				`{"type":"agentMessage","seq":3,"text":"on it"}]`, nil
+		}
+		return `{"waiting":false}`, nil
+	})
+
+	sess, collect := nudgeSession(t)
+	wakeAgentForQueuedChat(sess)
+
+	if got := collect(); got != "" {
+		t.Errorf("nudged an agent already working on the message, typed %q", got)
+	}
+}
+
+// A message the user took back is not waiting for anyone either.
+func TestWakeAgentForQueuedChatIgnoresDeletedMessages(t *testing.T) {
+	chatNudgeDelay = 10 * time.Millisecond
+	t.Cleanup(func() { chatNudgeDelay = 4 * time.Second })
+
+	swapOrchestrator(t, func(_ int, tool string, _ any) (string, error) {
+		if tool == "get_chat_history" {
+			return `[{"type":"userMessage","seq":1,"id":"u1","text":"oops"},` +
+				`{"type":"userMessageDeleted","seq":2,"id":"u1"}]`, nil
+		}
+		return `{"waiting":false}`, nil
+	})
+
+	sess, collect := nudgeSession(t)
+	wakeAgentForQueuedChat(sess)
+
+	if got := collect(); got != "" {
+		t.Errorf("nudged for a withdrawn message, typed %q", got)
+	}
+}
+
+// Unreadable history must not silence the nudge, for the same reason as an
+// unknown wait state below.
+func TestWakeAgentForQueuedChatNudgesWhenHistoryIsUnavailable(t *testing.T) {
+	chatNudgeDelay = 10 * time.Millisecond
+	t.Cleanup(func() { chatNudgeDelay = 4 * time.Second })
+
+	swapOrchestrator(t, func(_ int, tool string, _ any) (string, error) {
+		if tool == "get_chat_history" {
+			return "", errors.New("connection refused")
+		}
+		return `{"waiting":false}`, nil
+	})
+
+	sess, collect := nudgeSession(t)
+	wakeAgentForQueuedChat(sess)
+
+	if got := collect(); !strings.Contains(got, chatNudgeText) {
+		t.Errorf("unavailable history must still nudge, got %q", got)
 	}
 }
 

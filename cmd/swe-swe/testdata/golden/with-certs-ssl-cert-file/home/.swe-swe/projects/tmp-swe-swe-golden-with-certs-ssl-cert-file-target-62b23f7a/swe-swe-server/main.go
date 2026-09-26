@@ -9665,6 +9665,13 @@ func wakeAgentForQueuedChat(sess *Session) {
 		if agentIsParkedOnChat(sess) {
 			return
 		}
+		// Not parked is not the same as not reading: a message pushed while the
+		// agent was parked is handed over at once, and by now the agent is busy
+		// working on it. A nudge typed then makes it drop that work to report
+		// an empty queue (seen on pi during /ck:run-marp).
+		if !chatHasUnreadMessage(sess) {
+			return
+		}
 		if err := sess.WriteInput([]byte(chatNudgeText)); err != nil {
 			log.Printf("Session %s: chat nudge write failed: %v", sess.UUID, err)
 			return
@@ -9700,6 +9707,42 @@ func agentIsParkedOnChat(sess *Session) bool {
 		return false
 	}
 	return status.Waiting
+}
+
+// chatHasUnreadMessage reports whether any user message is still sitting in
+// the agent-chat queue: sent (userMessage) but neither handed to the agent
+// (userMessagesConsumed) nor withdrawn by the user (userMessageDeleted).
+//
+// Unreadable history counts as unread, for the same reason agentIsParkedOnChat
+// fails towards nudging: a redundant nudge is cheap, a stranded message is not.
+func chatHasUnreadMessage(sess *Session) bool {
+	out, err := orchestratorCall(sess.AgentChatPort, "get_chat_history", map[string]int64{"cursor": 0})
+	if err != nil {
+		log.Printf("Session %s: get_chat_history unavailable (%v), assuming a message is unread", sess.UUID, err)
+		return true
+	}
+	var events []bubbleEvent
+	if err := json.Unmarshal([]byte(out), &events); err != nil {
+		log.Printf("Session %s: get_chat_history unparseable (%v), assuming a message is unread", sess.UUID, err)
+		return true
+	}
+	settled := map[string]bool{}
+	for _, ev := range events {
+		switch ev.Type {
+		case "userMessagesConsumed":
+			for _, id := range ev.IDs {
+				settled[id] = true
+			}
+		case "userMessageDeleted":
+			settled[ev.ID] = true
+		}
+	}
+	for _, ev := range events {
+		if ev.Type == "userMessage" && ev.ID != "" && !settled[ev.ID] {
+			return true
+		}
+	}
+	return false
 }
 
 // handleLiveSessionsAPI serves GET /api/sessions/live: the uuids the homepage
