@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## v2.41.0 - Branch Cards
+
+### Features
+
+- **Branches are cards in New Session**: each branch shows as a card you can pick, search by typing, or delete (with Undo), replacing the old dropdown.
+- **Agent View says why it is missing**: when the agent's browser is switched off, not installed, or fails to start, the tab explains why and what to try, instead of vanishing or saying "Starting browser..." forever.
+- **Preview comes to the front when your app starts**: the first time your app answers, the Preview tab is switched to, even when it was hidden behind another tab.
+- **Selecting terminal text no longer copies it**: a short message names the copy keys instead (Ctrl+Shift+C off a Mac).
+- **One-finger swipe scrolls in Agent View** on phones and tablets.
+
+### Fixes
+
+- **Opening New Session on a big project no longer overloads the box**: branch details are fetched only for the card you pick, and git commands run one at a time.
+- **A branch that exists only on a second online copy of the project now keeps its work** instead of starting empty.
+- **Your saved Git password is no longer handed to other tools**: it is stored under a swe-swe-only name, so GH_TOKEN and GITLAB_TOKEN are yours to set.
+
 ## v2.40.1 - Preview Shows Up On Its Own
 
 ### Features
