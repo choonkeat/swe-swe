@@ -39,8 +39,8 @@ func checkRemoteBranch(ctx context.Context, repo, remote, name, credHost, credUs
 	defer cancel()
 
 	ref := "refs/heads/" + name
-	out, err := runGitWithTransientCredContext(ctx, credHost, credUsername, credToken,
-		"-C", repo, "ls-remote", "--exit-code", "--heads", remote, ref)
+	out, err := runGitWithTransientCredContext(ctx, repo, credHost, credUsername, credToken,
+		"ls-remote", "--exit-code", "--heads", remote, ref)
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.ExitCode() == 2 && ctx.Err() == nil {
 		return remoteBranchResult{}, nil // --exit-code: no matching ref
@@ -50,8 +50,8 @@ func checkRemoteBranch(ctx context.Context, repo, remote, name, credHost, credUs
 		return remoteBranchResult{}, errRemoteUnreachable
 	}
 
-	out, err = runGitWithTransientCredContext(ctx, credHost, credUsername, credToken,
-		"-C", repo, "fetch", remote, "+"+ref+":refs/remotes/"+remote+"/"+name)
+	out, err = runGitWithTransientCredContext(ctx, repo, credHost, credUsername, credToken,
+		"fetch", remote, "+"+ref+":refs/remotes/"+remote+"/"+name)
 	if err != nil {
 		log.Printf("Remote branch check: fetch %s %s in %s failed: %v, output: %s", remote, name, repo, err, strings.TrimSpace(string(out)))
 		return remoteBranchResult{Exists: true}, errRemoteUnreachable
@@ -89,7 +89,7 @@ func handleRemoteBranchAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	out, err := exec.Command("git", "-C", repo, "remote").Output()
+	out, err := gitRead(repo, "remote")
 	if err != nil || !slices.Contains(strings.Fields(string(out)), req.Remote) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "No such remote"})
 		return

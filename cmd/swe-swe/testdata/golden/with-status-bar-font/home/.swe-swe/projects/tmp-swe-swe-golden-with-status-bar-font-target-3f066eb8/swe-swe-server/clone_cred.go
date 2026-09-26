@@ -14,12 +14,10 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
-	"os/exec"
 	"strings"
 )
 
@@ -74,7 +72,7 @@ func gitCredHelperEnv(base []string) []string {
 	)
 }
 
-// runGitWithTransientCred runs `git args...` with a short-lived, per-call
+// runGitWithTransientCred runs `git -C dir args...` with a short-lived, per-call
 // credential context resolvable by the broker. host/username/token may be
 // empty -> behaves like a bare git call (no cred wired). It returns the
 // combined stdout+stderr and the process error (nil on exit 0).
@@ -82,25 +80,25 @@ func gitCredHelperEnv(base []string) []string {
 // Never embed credentials in the URL; never log the token. The transient
 // credential is cleared and the pid unregistered whether git succeeds or
 // fails, and is never persisted.
-func runGitWithTransientCred(host, username, token string, args ...string) ([]byte, error) {
-	return runGitWithTransientCredContext(context.Background(), host, username, token, args...)
+func runGitWithTransientCred(dir, host, username, token string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitCloneTimeout)
+	defer cancel()
+	return runGitWithTransientCredContext(ctx, dir, host, username, token, args...)
 }
 
 // runGitWithTransientCredContext is runGitWithTransientCred bounded by ctx:
 // when ctx expires git is killed, so a stalled network call can never pin the
 // calling HTTP handler (or hold git ref locks a concurrent `git worktree add`
 // needs). The transient credential is still cleared and the pid unregistered
-// on that path, because both are deferred.
-func runGitWithTransientCredContext(ctx context.Context, host, username, token string, args ...string) ([]byte, error) {
-	// Bare path: no token -> no credential helper wired, but still force
-	// non-interactive git (GIT_TERMINAL_PROMPT=0) so a private repo without
-	// credentials fails fast with an auth error instead of hanging the HTTP
-	// handler on git's username prompt.
+// on that path, because both are deferred. Runs on dir's network line
+// (runGit), which also makes git non-interactive (GIT_TERMINAL_PROMPT=0), so
+// a private repo without credentials fails fast with an auth error instead
+// of hanging on git's username prompt.
+func runGitWithTransientCredContext(ctx context.Context, dir, host, username, token string, args ...string) ([]byte, error) {
+	c := gitCall{Dir: dir, Args: args, Network: true, Combined: true}
 	if token == "" {
-		cmd := exec.CommandContext(ctx, "git", args...)
-		cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-		killGitGroupOnCancel(cmd)
-		return cmd.CombinedOutput()
+		// Bare path: no token -> no credential helper wired.
+		return runGit(ctx, c)
 	}
 
 	if username == "" {
@@ -111,22 +109,13 @@ func runGitWithTransientCredContext(ctx context.Context, host, username, token s
 	setCredential(transientID, host, CredentialBag{Username: username, Token: token})
 	defer clearSessionCredentials(transientID)
 
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Env = gitCredHelperEnv(os.Environ())
-	killGitGroupOnCancel(cmd)
-	var buf bytes.Buffer
-	cmd.Stdout = &buf
-	cmd.Stderr = &buf
-
-	if err := cmd.Start(); err != nil {
-		return buf.Bytes(), err
-	}
-	// Register the clone pid under the transient sid BEFORE Wait so the
+	c.Env = gitCredHelperEnv(os.Environ())
+	// Register the git pid under the transient sid BEFORE Wait so the
 	// credential helper (a grandchild of this process) resolves via the
 	// ancestry walk while git is blocked on auth.
-	registerSessionPid(cmd.Process.Pid, transientID)
-	defer unregisterSessionPid(cmd.Process.Pid)
-
-	err := cmd.Wait()
-	return buf.Bytes(), err
+	c.OnStart = func(pid int) func() {
+		registerSessionPid(pid, transientID)
+		return func() { unregisterSessionPid(pid) }
+	}
+	return runGit(ctx, c)
 }

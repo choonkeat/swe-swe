@@ -22,7 +22,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -243,9 +242,7 @@ func effectiveGitEmail(workDir string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "config", "user.email")
-	cmd.Dir = workDir
-	out, err := cmd.Output()
+	out, err := runGit(ctx, gitCall{Dir: workDir, Args: []string{"config", "user.email"}})
 	if err != nil {
 		return ""
 	}
@@ -307,9 +304,7 @@ func readLocalRemoteHost(workDir string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "remote", "get-url", "origin")
-	cmd.Dir = workDir
-	out, err := cmd.Output()
+	out, err := runGit(ctx, gitCall{Dir: workDir, Args: []string{"remote", "get-url", "origin"}})
 	if err != nil {
 		return ""
 	}
@@ -372,9 +367,7 @@ func repoInitSHA(workDir string) string {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "rev-list", "--max-parents=0", "HEAD")
-	cmd.Dir = workDir
-	out, err := cmd.Output()
+	out, err := runGit(ctx, gitCall{Dir: workDir, Args: []string{"rev-list", "--max-parents=0", "HEAD"}})
 	if err != nil {
 		return ""
 	}

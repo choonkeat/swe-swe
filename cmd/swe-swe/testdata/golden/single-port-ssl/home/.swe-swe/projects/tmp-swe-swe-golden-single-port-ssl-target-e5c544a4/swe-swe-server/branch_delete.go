@@ -19,7 +19,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -49,7 +48,7 @@ type branchDeleteResult struct {
 var shaPattern = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 func gitIn(dir string, args ...string) ([]byte, error) {
-	return exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput()
+	return gitWrite(dir, args...)
 }
 
 // validateBranchName refuses names git would reject or read as an option.
@@ -260,8 +259,7 @@ func switchToDefault(repo string, live map[string]bool) (string, error) {
 	defer cancel()
 	// Local only: when the default exists only as origin's copy, git makes a
 	// local branch from the copy already on this box; it does not fetch.
-	args := []string{"-C", repo, "checkout", "-q", def}
-	if o, err := exec.CommandContext(ctx, "git", args...).CombinedOutput(); err != nil {
+	if o, err := runGit(ctx, gitCall{Dir: repo, Args: []string{"checkout", "-q", def}, Combined: true}); err != nil {
 		return "", fmt.Errorf("checkout %s: %v: %s", def, err, o)
 	}
 	log.Printf("Branch card switch-back: %s now on %s", repo, def)

@@ -197,6 +197,9 @@ func gitArgsHead(args []string) []string {
 // would itself need a line). Falls back to the cleaned dir (a clone target,
 // a folder about to be `git init`ed).
 func gitLineKey(dir string) string {
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
 	dir = filepath.Clean(dir)
 	for d := dir; ; d = filepath.Dir(d) {
 		if key, ok := gitStoreAt(d); ok {
