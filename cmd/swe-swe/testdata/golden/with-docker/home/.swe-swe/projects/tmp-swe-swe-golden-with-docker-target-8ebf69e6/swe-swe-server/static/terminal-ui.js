@@ -14,6 +14,7 @@ import { IframeLoadSupervisor } from './modules/iframe-load-supervisor.js';
 import { collectPreviewCheck } from './modules/preview-check.js';
 import { REASON as AUTOSEND_REASON, isAutoSendSafe, orderedCredHosts, pickPaneHost, planAutoSend, autoRestoreHint } from './modules/cred-autosend.js';
 import { DARK_XTERM_THEME, LIGHT_XTERM_THEME } from './theme-mode.js';
+import { isApplePlatform, copyHint, isCopyShortcut } from './modules/copy-keys.js';
 
 // --- Tab title ---
 // A session tab used to read "claude - 4f2a1b90 - swe-swe" forever: three
@@ -5717,14 +5718,27 @@ class TerminalUI extends HTMLElement {
             }
         });
 
-        // Copy-on-select: automatically copy to clipboard when mouse selection ends.
+        // Selecting does not copy (it used to, and clobbered the clipboard on
+        // every stray drag). Instead, name this keyboard's copy keys.
+        const apple = isApplePlatform(navigator.platform);
         const termEl = this.querySelector('.terminal-ui__terminal');
         if (termEl) {
             termEl.addEventListener('mouseup', (e) => {
                 if (e.button !== 0) return; // left-click only
                 if (!this.term || !this.term.hasSelection()) return;
+                this.showStatusNotification(copyHint(apple), 2500);
+            });
+        }
+
+        // Ctrl+Shift+C copies off Apple: Ctrl+C alone is the terminal's
+        // interrupt. With nothing selected the key goes to the terminal.
+        if (this.term) {
+            this.term.attachCustomKeyEventHandler((e) => {
+                if (!isCopyShortcut(e, apple) || !this.term.hasSelection()) return true;
+                e.preventDefault();
                 copySelection(this.term.getSelection());
                 this.showStatusNotification('Copied to clipboard', 1500);
+                return false;
             });
         }
     }
