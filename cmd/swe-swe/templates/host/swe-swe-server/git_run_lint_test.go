@@ -19,8 +19,7 @@ import (
 // file goes below, lower its number here so it can't creep back up. Phase D
 // ends with this map empty.
 var gitStartsNotYetMoved = map[string]int{
-	"main.go":              27,
-	"session_gitconfig.go": 3,
+	"main.go": 27,
 }
 
 // TestGitStartsOnlyInRunGit: every git command in swe-swe-server goes through
