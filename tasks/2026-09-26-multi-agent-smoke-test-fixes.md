@@ -1,6 +1,6 @@
 # Multi-agent smoke test: fixes
 
-## Status: IN PROGRESS - fixes 1, 2 and 3 verified live
+## Status: DONE - fixes 1-6 verified live (Later items open)
 
 ## Context
 
@@ -99,6 +99,11 @@ permissions).
 - **Estimate:** about 30 minutes.
 
 ### 5. `/ck:run-marp` instructions are unsafe for OpenCode and Pi
+
+**DONE** in slash-commands 68e45ab (unpushed); verified live 2026-09-27 on Pi
+and OpenCode concurrently: both started it with `setsid nohup ... &`, got
+`200`, returned to chat; both stopped it by process group and saw `000`; no
+marp process left.
 
 - **Where:** `run-marp.md` in the separate `ck` command repo (not swe-swe)
 - **Symptoms:**
