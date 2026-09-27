@@ -472,11 +472,15 @@ var assistantConfigs = []AssistantConfig{
 		SlashCmdFormat:  SlashCmdTOML,
 	},
 	{
-		Name:            "Codex",
-		ShellCmd:        "codex",
-		ShellRestartCmd: "codex resume --last",
-		YoloShellCmd:    "codex --yolo",
-		YoloRestartCmd:  "codex --yolo resume --last",
+		Name: "Codex",
+		// --no-daemon: Codex otherwise shares one background app-server
+		// across sessions, and it launches every session's MCP servers with
+		// the env of whichever session started it first -- so a second
+		// session gets the first one's AGENT_CHAT_PORT/EXPORT_DIR and no chat.
+		ShellCmd:        "codex --no-daemon",
+		ShellRestartCmd: "codex --no-daemon resume --last",
+		YoloShellCmd:    "codex --yolo --no-daemon",
+		YoloRestartCmd:  "codex --yolo --no-daemon resume --last",
 		Binary:          "codex",
 		Homepage:        true,
 		SlashCmdFormat:  SlashCmdMD,
