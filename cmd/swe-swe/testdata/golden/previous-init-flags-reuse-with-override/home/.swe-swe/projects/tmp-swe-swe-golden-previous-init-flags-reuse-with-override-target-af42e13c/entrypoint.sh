@@ -260,6 +260,7 @@ else
   cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
 fi
 rm -f /tmp/swe-claude-settings.json
+find /home/app/.claude -type s -delete
 chown -R app: /home/app/.claude
 echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard hooks${NC}"
 

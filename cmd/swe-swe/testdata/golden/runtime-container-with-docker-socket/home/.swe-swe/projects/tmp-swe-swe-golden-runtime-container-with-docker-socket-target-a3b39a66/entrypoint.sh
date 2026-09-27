@@ -73,6 +73,7 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
   }
 }
 EOF
+find /home/app/.config/opencode -type s -delete
 chown -R app: /home/app/.config/opencode
 echo -e "${GREEN}[ok] Created OpenCode MCP configuration${NC}"
 
@@ -109,6 +110,7 @@ command = "swe-npx"
 args = ["-y", "@choonkeat/agent-reverse-proxy", "--bridge", "http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"]
 env_vars = ["SWE_SERVER_PORT", "MCP_AUTH_KEY"]
 EOF
+find /home/app/.codex -type s -delete
 chown -R app: /home/app/.codex
 echo -e "${GREEN}[ok] Created Codex MCP configuration${NC}"
 
@@ -148,6 +150,7 @@ cat > /home/app/.gemini/settings.json << 'EOF'
   }
 }
 EOF
+find /home/app/.gemini -type s -delete
 chown -R app: /home/app/.gemini
 echo -e "${GREEN}[ok] Created Gemini MCP configuration${NC}"
 
@@ -180,6 +183,7 @@ extensions:
       - "-c"
       - "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/mcp?key=$MCP_AUTH_KEY"
 EOF
+find /home/app/.config/goose -type s -delete
 chown -R app: /home/app/.config/goose
 echo -e "${GREEN}[ok] Created Goose MCP configuration${NC}"
 # Wrapper: auto-run 'goose configure' if no provider is configured
@@ -423,6 +427,7 @@ else
   cp /tmp/swe-claude-settings.json "$CLAUDE_SETTINGS"
 fi
 rm -f /tmp/swe-claude-settings.json
+find /home/app/.claude -type s -delete
 chown -R app: /home/app/.claude
 echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard hooks${NC}"
 
@@ -433,6 +438,7 @@ echo -e "${GREEN}[ok] Installed AskUserQuestion + Artifact + silent-stop guard h
 # custom mcp-bridge.ts to hack on it.
 mkdir -p /home/app/.pi/agent/extensions
 cp /tmp/pi-mcp-bridge.ts /home/app/.pi/agent/extensions/mcp-bridge.ts
+find /home/app/.pi -type s -delete
 chown -R app: /home/app/.pi
 echo -e "${GREEN}[ok] Installed Pi mcp-bridge extension${NC}"
 

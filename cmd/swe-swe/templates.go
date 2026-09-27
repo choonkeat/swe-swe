@@ -924,12 +924,19 @@ done`,
 	chownPi := ""
 	chownClaude := ""
 	if withDocker {
-		chownOpencode = "chown -R app: /home/app/.config/opencode"
-		chownCodex = "chown -R app: /home/app/.codex"
-		chownGemini = "chown -R app: /home/app/.gemini"
-		chownGoose = "chown -R app: /home/app/.config/goose"
-		chownPi = "chown -R app: /home/app/.pi"
-		chownClaude = "chown -R app: /home/app/.claude"
+		// Delete stale unix sockets first: agents (e.g. codex's
+		// app-server-daemon) leave them behind in the bind-mounted home, and
+		// on macOS hosts (virtiofs) chown on a socket fails with ENOENT,
+		// aborting the entrypoint. Nothing is running yet, so they are dead.
+		chownDir := func(dir string) string {
+			return fmt.Sprintf("find %s -type s -delete\nchown -R app: %s", dir, dir)
+		}
+		chownOpencode = chownDir("/home/app/.config/opencode")
+		chownCodex = chownDir("/home/app/.codex")
+		chownGemini = chownDir("/home/app/.gemini")
+		chownGoose = chownDir("/home/app/.config/goose")
+		chownPi = chownDir("/home/app/.pi")
+		chownClaude = chownDir("/home/app/.claude")
 	}
 
 	// Generate Claude MCP setup block (varies by docker mode)
