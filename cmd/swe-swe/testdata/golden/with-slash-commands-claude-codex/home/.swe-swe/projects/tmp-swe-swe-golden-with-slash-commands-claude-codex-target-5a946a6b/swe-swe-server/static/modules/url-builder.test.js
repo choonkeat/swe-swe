@@ -5,7 +5,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
+import { getBaseUrl, buildShellUrl, buildSessionPageUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildFilesHomeUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainOrigin, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, buildSubdomainProxyUrl, accessedViaTunnel, themeCookieDomain, getDebugQueryString } from './url-builder.js';
 
 // getBaseUrl tests
 test('getBaseUrl with port returns protocol://hostname:port', () => {
@@ -679,13 +679,27 @@ test('buildFilesPathUrl strips the leading slash agent-chat may send', () => {
     );
 });
 
-// Directories, images and markdown ignore the flag, so no file-vs-directory
-// guess is needed -- agent-chat sends the path with no such hint.
-test('buildFilesPathUrl keeps a directory path intact, trailing slash and all', () => {
+// Directories, images and markdown ignore pretty=1. A trailing slash is the
+// only folder hint, and it adds listing=1.
+test('buildFilesPathUrl keeps a directory path intact and asks for its listing', () => {
     assert.strictEqual(
         buildFilesPathUrl('/proxy/u/files', 'agent-chats/'),
-        '/proxy/u/files/agent-chats/?pretty=1'
+        '/proxy/u/files/agent-chats/?pretty=1&listing=1'
     );
+});
+
+test('buildFilesPathUrl leaves listing off a file, index.html included', () => {
+    // md-serve redirects index.html to its folder and keeps the query, so a
+    // listing=1 here would land on the file list instead of the page.
+    assert.strictEqual(
+        buildFilesPathUrl('/proxy/u/files', 'agent-chats/index.html'),
+        '/proxy/u/files/agent-chats/index.html?pretty=1'
+    );
+});
+
+test('buildFilesHomeUrl starts the Files pane on the workspace file list', () => {
+    assert.strictEqual(buildFilesHomeUrl('/proxy/u/files'), '/proxy/u/files/?listing=1');
+    assert.strictEqual(buildFilesHomeUrl('http://localhost:9000'), 'http://localhost:9000/?listing=1');
 });
 
 test('buildFilesPathUrl preserves an existing query and only forces pretty', () => {
@@ -702,9 +716,9 @@ test('buildFilesPathUrl overrides a pretty the caller already set', () => {
     );
 });
 
-test('buildFilesPathUrl tolerates a missing path', () => {
-    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', ''), '/proxy/u/files/?pretty=1');
-    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', null), '/proxy/u/files/?pretty=1');
+test('buildFilesPathUrl tolerates a missing path: the workspace root, as a list', () => {
+    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', ''), '/proxy/u/files/?pretty=1&listing=1');
+    assert.strictEqual(buildFilesPathUrl('/proxy/u/files', null), '/proxy/u/files/?pretty=1&listing=1');
 });
 
 test('buildFilesPathUrl works on a cross-origin files base', () => {

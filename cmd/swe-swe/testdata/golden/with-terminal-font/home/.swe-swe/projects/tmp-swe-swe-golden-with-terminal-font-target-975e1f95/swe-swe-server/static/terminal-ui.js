@@ -1,7 +1,7 @@
 import { formatDuration, formatFileSize, escapeHtml, escapeFilename } from './modules/util.js';
 import { validateUsername, validateSessionName } from './modules/validation.js';
 import { deriveShellUUID } from './modules/uuid.js';
-import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
+import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentChatUrl, buildFilesUrl, buildFilesPathUrl, buildFilesHomeUrl, buildVNCUrl, buildPortBasedVNCUrl, buildSubdomainVNCUrl, buildVNCViewerUrl, buildPortBasedPreviewUrl, buildPortBasedAgentChatUrl, buildPortBasedFilesUrl, buildPortBasedProxyUrl, buildSubdomainPreviewUrl, buildSubdomainAgentChatUrl, buildSubdomainFilesUrl, accessedViaTunnel, getDebugQueryString, logicalToVhostLabel, buildVhostPreviewUrl, parseLogicalInput } from './modules/url-builder.js';
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
 import { agentViewKnown, agentViewLive, agentViewUnavailablePath, filesPaneKnown, previewRevealAction } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
@@ -6158,7 +6158,7 @@ class TerminalUI extends HTMLElement {
             existing.stop();
             delete this._iframeSupervisors['files'];
         }
-        this.setIframeUrl(filesUrl + '/', 'files');
+        this.setIframeUrl(buildFilesHomeUrl(filesUrl), 'files');
     }
 
     // Add a pane as a new tab in a slot. If the pane already lives in another
@@ -6307,7 +6307,7 @@ class TerminalUI extends HTMLElement {
                 if (!filesUrl) return;
                 if (this._filesReady) {
                     this._paneLoaded.add('files');
-                    this.setIframeUrl(filesUrl + '/', 'files');
+                    this.setIframeUrl(buildFilesHomeUrl(filesUrl), 'files');
                     break;
                 }
                 // md-serve readiness probe: the per-session md-serve is
@@ -6338,7 +6338,7 @@ class TerminalUI extends HTMLElement {
                             // md-serve's cold start outlasts the reachability
                             // probe, so by now the port form may have won and
                             // the captured path form would be stale.
-                            this.setIframeUrl(this._filesBaseUrl() + '/', 'files');
+                            this.setIframeUrl(buildFilesHomeUrl(this._filesBaseUrl()), 'files');
                         }
                     }).catch(() => {
                         this._filesProbing = false;
@@ -7230,7 +7230,7 @@ class TerminalUI extends HTMLElement {
                 return this._agentViewUnavailableUrl() || this.getBrowserViewUrl();
             case 'files': {
                 const filesUrl = this._filesBaseUrl();
-                return filesUrl ? filesUrl + '/' : null;
+                return filesUrl ? buildFilesHomeUrl(filesUrl) : null;
             }
             case 'agent-chat': {
                 const chatIframe = this.querySelector('.terminal-ui__agent-chat-iframe');

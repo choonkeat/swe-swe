@@ -568,7 +568,6 @@ type Session struct {
 	CDPPort        int    // Chrome DevTools Protocol port for this session
 	VNCPort        int    // VNC port for browser view for this session
 	FilesPort      int    // Files (md-serve) port for this session
-	MdServeDir     string // Folder the md-serve on FilesPort serves (a child session shares its parent's)
 	BrowserPIDs    []int         // PIDs of browser processes (Xvfb, Chromium, x11vnc, noVNC)
 	BrowserDataDir string        // Per-session Chromium user data directory
 	BrowserProcs   *browserProcs // Full handle incl. the CDP forwarder server
@@ -5919,12 +5918,6 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		},
 	}
 	sessions[p.UUID] = sess
-	// The Files pane's md-serve serves this session's folder -- or, for a
-	// child session, which shares its parent's md-serve, the parent's.
-	sess.MdServeDir = sess.WorkDir
-	if parentSess, ok := sessions[p.ParentUUID]; ok && p.ParentUUID != "" && parentSess.MdServeDir != "" {
-		sess.MdServeDir = parentSess.MdServeDir
-	}
 
 	// Inherit git credentials/signing from the authenticated calling session
 	// (MCP create_session). Done after the session is registered so the
@@ -6010,8 +6003,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		if err != nil {
 			log.Printf("Warning: failed to create files path proxy for session %s: %v", sess.UUID, err)
 		} else {
-			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesLivereloadPathFix("/proxy/"+sess.UUID+"/files",
-				filesDirListingFix("/proxy/"+sess.UUID+"/files", sess.MdServeDir, filesPathProxy)))
+			sessMux.Handle("/proxy/"+sess.UUID+"/files/", filesLivereloadPathFix("/proxy/"+sess.UUID+"/files", filesPathProxy))
 		}
 		sess.PreviewProxy = previewProxy
 		sess.SessionMux = sessMux
@@ -6183,7 +6175,7 @@ func startPerSessionProxyListeners(d perSessionProxyDeps) {
 	filesPP := filesProxyPort(sess.FilesPort)
 	filesHandler := corsWrapper(requireAuthCookie(authPassword, func(scope string) bool {
 		return scopeOwnsProxyPort(scope, filesPP, func(s *Session) int { return filesProxyPort(s.FilesPort) })
-	}, filesDirListingFix("", sess.MdServeDir, filesReverseProxy)))
+	}, filesReverseProxy))
 	sess.trackProxyServer(
 		startProxyListener("files", sess.UUID, fmt.Sprintf(":%d", filesPP), filesHandler),
 		func(s *Session, srv *http.Server) { s.FilesProxyServer = srv })

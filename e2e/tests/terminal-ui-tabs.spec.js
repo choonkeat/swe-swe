@@ -713,6 +713,9 @@ test.describe('terminal-ui tab switching', () => {
     }, null, { timeout: 10_000 }).then(h => h.jsonValue());
     expect(src).toBeTruthy();
     expect(src).toContain(`:${filesProxyPort}`);
+    // The pane starts on the file list even when the workspace holds an
+    // index.html; every other folder opens however md-serve decides.
+    expect(src).toMatch(/\/\?listing=1$/);
 
     // Finally, confirm md-serve is actually answering on that proxy port by
     // fetching the directory listing it renders for the session workDir.
