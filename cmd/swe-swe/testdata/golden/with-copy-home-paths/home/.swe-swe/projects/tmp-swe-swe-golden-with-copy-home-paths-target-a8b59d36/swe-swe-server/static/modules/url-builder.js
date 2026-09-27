@@ -373,7 +373,13 @@ export function parseLogicalInput(raw, suffix) {
  * appended unconditionally rather than guessing which kind of entry this is
  * (agent-chat sends the path alone, with no such hint).
  *
- * A path that already carries a query keeps it; only `pretty` is forced.
+ * A path ending in "/" is a folder, and also gets `listing=1`: md-serve opens
+ * a folder holding an index.html as that page, but a chat link to a folder
+ * means "show what's inside". A folder path without the trailing slash can't
+ * be told apart from a file here, so it opens however md-serve decides.
+ *
+ * A path that already carries a query keeps it; only `pretty` (and `listing`
+ * for a folder) is forced.
  *
  * @param {string} filesBase - Files pane base URL, no trailing slash
  * @param {string} path - Workspace-relative path, leading slashes optional
@@ -384,7 +390,22 @@ export function buildFilesPathUrl(filesBase, path) {
     const [pathname, ...queryParts] = rel.split('?');
     const params = new URLSearchParams(queryParts.join('?'));
     params.set('pretty', '1');
+    if (pathname === '' || pathname.endsWith('/')) params.set('listing', '1');
     return `${filesBase}/${pathname}?${params.toString()}`;
+}
+
+/**
+ * Build the URL the Files pane starts on: the workspace folder as a file
+ * list. md-serve would otherwise open the folder's index.html as a page, and
+ * an agent building a small web app writes exactly that file there. Only this
+ * starting point asks for the list; folders the user clicks into open however
+ * md-serve decides (page if they hold an index.html).
+ *
+ * @param {string} filesBase - Files pane base URL, no trailing slash
+ * @returns {string} Files pane start URL
+ */
+export function buildFilesHomeUrl(filesBase) {
+    return `${filesBase}/?listing=1`;
 }
 
 /**
