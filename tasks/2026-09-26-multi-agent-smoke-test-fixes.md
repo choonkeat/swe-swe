@@ -1,6 +1,6 @@
 # Multi-agent smoke test: fixes
 
-## Status: IN PROGRESS - fixes 1 and 2 verified live, fix 3 done
+## Status: IN PROGRESS - fixes 1, 2 and 3 verified live
 
 ## Context
 
@@ -71,7 +71,9 @@ consumed by that same `send_message` call and it answered.
 default of 60000ms. swe-swe set neither, hence the ~60s give-up. Now
 `"timeout": 86400000` on `swe-swe-agent-chat` only (`mcpOpencodeSpecs`,
 shared `ToolTimeoutSec` field with the Codex fix); `opencode debug config`
-(1.18.32) accepts it.
+(1.18.32) accepts it. Verified live 2026-09-27 (runtime opencode.json patched
+by hand, same content the next boot writes): OpenCode sat in `send_message`
+for 3m14s with no repeat, then that same call consumed the next message.
 
 - **Symptom:** `send_message` re-sent the same text about 63s later (the user
   sees it twice), then `check_messages`, then idle. The next message woke it.
