@@ -9437,6 +9437,32 @@ func handleSessionEndAPI(w http.ResponseWriter, r *http.Request) {
 // variable so tests can drive the chat-log paths without a live agent-chat.
 var orchestratorCall = callAgentChatOrchestrator
 
+// How long pushChatMessage keeps retrying a session whose agent-chat is not
+// listening yet, and how often. Variables so tests don't wait a minute.
+var (
+	chatPushWait       = 60 * time.Second
+	chatPushRetryEvery = time.Second
+)
+
+// pushChatMessage queues a chat message for the session's agent. A session's
+// agent-chat starts 10-30s after the session (the agent launches it), so a
+// message sent right after create_session used to fail with "connection
+// refused". Only that error is retried: it means nothing was delivered, so a
+// retry can never duplicate the message.
+func pushChatMessage(port int, args any) (string, error) {
+	deadline := time.Now().Add(chatPushWait)
+	for {
+		out, err := orchestratorCall(port, "send_chat_message", args)
+		if err == nil || !errors.Is(err, syscall.ECONNREFUSED) {
+			return out, err
+		}
+		if !time.Now().Before(deadline) {
+			return "", fmt.Errorf("agent chat not ready after %s -- the agent may be stuck on a startup screen, check get_session_output: %w", chatPushWait, err)
+		}
+		time.Sleep(chatPushRetryEvery)
+	}
+}
+
 // chatLogInfo is what the end-session UI needs to decide which chat-log
 // options to offer. Mirrors agent-chat's chatlog_status, plus Committed, which
 // only we can answer because only we know the repo.
@@ -9622,7 +9648,7 @@ func requestChatLogCommitThenEnd(sess *Session) error {
 	if sessionHasSlashCommand(sess, chatLogCommitThenEndCommand) {
 		text = "/" + chatLogCommitThenEndCommand
 	}
-	_, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]any{"text": text})
+	_, err := pushChatMessage(sess.AgentChatPort, map[string]any{"text": text})
 	if err == nil {
 		wakeAgentForQueuedChat(sess)
 	}
@@ -10719,7 +10745,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		// Server-stamped signoff: the receiving agent learns which session to
 		// reply to, from the caller's auth-key identity rather than agent text.
 		text := args.Text + chatSignoff("send_chat_message", callerSessionFromContext(ctx))
-		result, err := orchestratorCall(sess.AgentChatPort, "send_chat_message", map[string]string{"text": text})
+		result, err := pushChatMessage(sess.AgentChatPort, map[string]string{"text": text})
 		if err != nil {
 			return nil, nil, fmt.Errorf("agent chat error: %w", err)
 		}
