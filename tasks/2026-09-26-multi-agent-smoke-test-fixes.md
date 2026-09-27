@@ -83,6 +83,14 @@ for 3m14s with no repeat, then that same call consumed the next message.
 
 ### 4. OpenCode permission prompt is invisible from chat
 
+**DONE**; verified live 2026-09-27. The container's `opencode.json` now
+carries `permission.external_directory` = allow for
+`/home/app/.config/opencode/command/*` and `/home/app/.swe-swe/commands/*`
+(`opencodeExternalDirs` in `mcpspec.go`). Before: reading `ck/run-marp.md`
+raised the prompt. After: `ck/run-marp.md` and `swe-swe/setup.md` (via the
+symlink) both read with no prompt. Dockerless is untouched (user's own
+permissions).
+
 - **Symptom:** reading `~/.config/opencode/command/ck/run-marp.md` raised
   "Permission required: Access external directory" in the TUI only. A chat
   user would wait forever.

@@ -54,6 +54,12 @@ cat > /home/app/.config/opencode/opencode.json << 'EOF'
         "exec swe-npx -y @choonkeat/agent-reverse-proxy --bridge http://localhost:$SWE_SERVER_PORT/proxy/$SESSION_UUID/preview/mcp?key=$MCP_AUTH_KEY"
       ]
     }
+  },
+  "permission": {
+    "external_directory": {
+      "/home/app/.config/opencode/command/*": "allow",
+      "/home/app/.swe-swe/commands/*": "allow"
+    }
   }
 }
 EOF

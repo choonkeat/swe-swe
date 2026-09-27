@@ -269,11 +269,31 @@ func mcpStdioJSON() string {
 	}{MCPServers: mcpStdioSpecs()})
 }
 
-// mcpOpencodeJSON renders OpenCode's {"mcp": ...} document.
+// opencodeExternalDirs are the folders outside the project that swe-swe
+// itself fills with slash commands (command/swe-swe is a symlink into
+// ~/.swe-swe/commands). OpenCode asks before reading outside the project,
+// and that prompt only shows in its TUI, so a chat-only session would wait
+// on it forever. Container paths only: dockerless leaves the user's own
+// OpenCode permissions alone.
+var opencodeExternalDirs = []string{
+	"/home/app/.config/opencode/command/*",
+	"/home/app/.swe-swe/commands/*",
+}
+
+// mcpOpencodeJSON renders the container's OpenCode config: the {"mcp": ...}
+// servers plus read access to swe-swe's command folders.
 func mcpOpencodeJSON() string {
+	allow := make(map[string]string, len(opencodeExternalDirs))
+	for _, d := range opencodeExternalDirs {
+		allow[d] = "allow"
+	}
 	return mustMarshalIndent(struct {
-		MCP map[string]mcpOpencodeSpec `json:"mcp"`
-	}{MCP: mcpOpencodeSpecs()})
+		MCP        map[string]mcpOpencodeSpec   `json:"mcp"`
+		Permission map[string]map[string]string `json:"permission"`
+	}{
+		MCP:        mcpOpencodeSpecs(),
+		Permission: map[string]map[string]string{"external_directory": allow},
+	})
 }
 
 func mustMarshalIndent(v any) string {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -101,6 +102,24 @@ func TestMCPOpencodeAgentChatWaitsForTheUser(t *testing.T) {
 		}
 		if spec.Timeout != want {
 			t.Errorf("%s timeout = %d, want %d", name, spec.Timeout, want)
+		}
+	}
+}
+
+// OpenCode's "Access external directory" prompt only shows in its TUI, so
+// reading one of swe-swe's slash-command files from a chat session hung.
+func TestMCPOpencodeAllowsSlashCommandDirs(t *testing.T) {
+	var doc struct {
+		Permission struct {
+			ExternalDirectory map[string]string `json:"external_directory"`
+		} `json:"permission"`
+	}
+	if err := json.Unmarshal([]byte(mcpOpencodeJSON()), &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, dir := range []string{"/home/app/.config/opencode/command/*", "/home/app/.swe-swe/commands/*"} {
+		if got := doc.Permission.ExternalDirectory[dir]; got != "allow" {
+			t.Errorf("external_directory[%q] = %q, want allow", dir, got)
 		}
 	}
 }
