@@ -2102,6 +2102,24 @@
                                 <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
                             </label>
                         </div>
+                        <!-- Screenshots in the archive (chat sessions only; staged as
+                             AGENT_CHAT_EXPORT_ASSETS=none|small|original, see
+                             startSession). Disabled while archiving is off. -->
+                        <fieldset class="dialog__field" id="new-session-chatlog-assets" style="border:0; margin:0 0 0 24px; padding:0;">
+                            <legend class="dialog__label">Screenshots in the archive</legend>
+                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                <input type="radio" name="chatlog-assets" value="none" checked>
+                                <span>Placeholders <small style="opacity:.7;">[image.png #1] text, no file</small></span>
+                            </label>
+                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                <input type="radio" name="chatlog-assets" value="small">
+                                <span>Small <small style="opacity:.7;">downscaled to 1280px</small></span>
+                            </label>
+                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                <input type="radio" name="chatlog-assets" value="original">
+                                <span>Original <small style="opacity:.7;">as pasted, full size</small></span>
+                            </label>
+                        </fieldset>
                     </details>
                     <!-- Env file hint -->
                     <div class="dialog__env-hint" id="new-session-env-hint" style="display: none;"></div>

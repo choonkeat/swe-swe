@@ -570,6 +570,49 @@ test.describe('new-session dialog', () => {
     expect(url.searchParams.get('pwd')).toBe(CARDS_REPO);
   });
 
+  // The archive's screenshots pick rides the env blob as
+  // AGENT_CHAT_EXPORT_ASSETS; unchecking the archive greys the pick out and
+  // stages the archive opt-out alone. The POST is captured, not sent, so no
+  // session starts.
+  test('screenshots pick stages AGENT_CHAT_EXPORT_ASSETS, only while archiving', async ({ page }) => {
+    const posted = [];
+    await page.route('**/api/session/new', async (route) => {
+      posted.push(new URLSearchParams(route.request().postData() || '').get('env') || '');
+      await route.fulfill({ status: 204 });
+    });
+    const start = async () => {
+      const n = posted.length;
+      await page.click('#new-session-start-chat');
+      await expect.poll(() => posted.length).toBe(n + 1);
+      return posted[n];
+    };
+
+    await openCardsRepo(page);
+    await page.evaluate(() => localStorage.removeItem('swe-swe-chatlog-assets'));
+    await openCardsRepo(page);
+    await page.locator('.dialog__agent').first().click();
+    await page.click('.dialog__advanced-summary');
+    const picker = page.locator('#new-session-chatlog-assets');
+    await expect(picker.locator('input[value="none"]')).toBeChecked();
+
+    expect(await start()).toContain('AGENT_CHAT_EXPORT_ASSETS=none');
+
+    await picker.locator('input[value="small"]').check();
+    expect(await start()).toContain('AGENT_CHAT_EXPORT_ASSETS=small');
+
+    // The pick is remembered for the next dialog on this browser.
+    await openCardsRepo(page);
+    await page.locator('.dialog__agent').first().click();
+    await page.click('.dialog__advanced-summary');
+    await expect(picker.locator('input[value="small"]')).toBeChecked();
+
+    await page.uncheck('#new-session-chatlog-archive');
+    await expect(picker.locator('input[value="small"]')).toBeDisabled();
+    const env = await start();
+    expect(env).toContain('AGENT_CHAT_EXPORT_DIR=');
+    expect(env).not.toContain('AGENT_CHAT_EXPORT_ASSETS');
+  });
+
   // Sketch screen D: "+ New branch" only ever makes something new.
   test('typing into + New branch picks existing cards and blocks online-copy names', async ({ page }) => {
     await openCardsRepo(page);

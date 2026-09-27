@@ -54,8 +54,8 @@ func mcpServers() []mcpServer {
 				"--autocomplete-triggers", "/=slash-command",
 				"--autocomplete-url", "http://localhost:$SWE_SERVER_PORT/api/autocomplete/$SESSION_UUID?key=$MCP_AUTH_KEY",
 			},
-			EnvVars: []string{"AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"},
-			Note:    "AGENT_CHAT_EVENT_LOG (chat history / recordings) and AGENT_CHAT_EXPORT_DIR\n(streaming chat-log export, which chatlog_close needs) are read by\nagent-chat itself, so they have to be on the whitelist or Codex sessions\nsilently lose both.",
+			EnvVars: []string{"AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "AGENT_CHAT_EXPORT_ASSETS", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"},
+			Note:    "AGENT_CHAT_EVENT_LOG (chat history / recordings), AGENT_CHAT_EXPORT_DIR\n(streaming chat-log export, which chatlog_close needs) and\nAGENT_CHAT_EXPORT_ASSETS (the New Session screenshots pick) are read by\nagent-chat itself, so they have to be on the whitelist or Codex sessions\nsilently lose them.",
 			// One day: send_message waits for a human, not a machine.
 			ToolTimeoutSec: 86400,
 		},

@@ -1814,6 +1814,10 @@
             var archiveBox = document.getElementById('new-session-chatlog-archive');
             if (archiveBox && !archiveBox.checked) {
                 envBlob = (envBlob ? envBlob + '\n' : '') + 'AGENT_CHAT_EXPORT_DIR=';
+            } else if (archiveBox) {
+                // Screenshots picker: what agent-chat's export does with
+                // attachments (none = placeholders, agent-chat's default).
+                envBlob = (envBlob ? envBlob + '\n' : '') + 'AGENT_CHAT_EXPORT_ASSETS=' + chatlogAssetsValue();
             }
         }
         if (envBlob) {
@@ -1825,6 +1829,33 @@
         }
         document.body.appendChild(form);
         form.submit();
+    }
+
+    // Chat-log screenshots picker: remembered per device, greyed out while
+    // the archive checkbox is off (the pick is kept for next time).
+    var CHATLOG_ASSETS_KEY = 'swe-swe-chatlog-assets';
+    var chatlogAssetsBox = document.getElementById('new-session-chatlog-assets');
+    var chatlogArchiveBox = document.getElementById('new-session-chatlog-archive');
+    function chatlogAssetsValue() {
+        var picked = chatlogAssetsBox && chatlogAssetsBox.querySelector('input[name="chatlog-assets"]:checked');
+        return picked ? picked.value : 'none';
+    }
+    if (chatlogAssetsBox) {
+        try {
+            var savedAssets = localStorage.getItem(CHATLOG_ASSETS_KEY);
+            var savedRadio = savedAssets && chatlogAssetsBox.querySelector('input[name="chatlog-assets"][value="' + savedAssets + '"]');
+            if (savedRadio) savedRadio.checked = true;
+        } catch (e) { /* storage blocked: keep the default */ }
+        chatlogAssetsBox.addEventListener('change', function() {
+            try { localStorage.setItem(CHATLOG_ASSETS_KEY, chatlogAssetsValue()); } catch (e) { /* ignore */ }
+        });
+        var syncChatlogAssets = function() {
+            var on = !chatlogArchiveBox || chatlogArchiveBox.checked;
+            chatlogAssetsBox.disabled = !on;
+            chatlogAssetsBox.style.opacity = on ? '' : '0.45';
+        };
+        if (chatlogArchiveBox) chatlogArchiveBox.addEventListener('change', syncChatlogAssets);
+        syncChatlogAssets();
     }
 
     // Read the repo env-vars blob saved by the terminal-ui settings panel,
