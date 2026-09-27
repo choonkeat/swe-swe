@@ -146,6 +146,10 @@ marp process left.
 - Chat messages sent right after `create_session` fail with
   `connection refused` on the agent-chat port. It worked a few seconds later.
   `create_session` could wait until agent-chat is ready.
+  **DONE** in 573050541 (other way round: `pushChatMessage` retries only
+  ECONNREFUSED every 1s for up to 60s, for the `send_chat_message` MCP tool
+  and commit-log-then-end). Unit-tested; live check pending the next reboot:
+  `create_session` then `send_chat_message` immediately -> "message pushed".
 - OpenCode and Pi don't treat a chat message starting with `/name` as a slash
   command to look up. Codex does. swe-swe could append the resolved command
   file path when a chat message starts with a known command.
