@@ -34,10 +34,11 @@ type mcpServer struct {
 	// Note is carried into the generated Codex TOML as a comment, so the
 	// reasoning behind a whitelist entry survives the generation step.
 	Note string
-	// CodexToolTimeoutSec, when non-zero, overrides how long Codex waits
-	// for one tool call. agent-chat's send_message blocks until the user
-	// replies, so Codex's default (300s) ends the turn mid-conversation.
-	CodexToolTimeoutSec int
+	// ToolTimeoutSec, when non-zero, overrides how long Codex and OpenCode
+	// wait for one tool call. agent-chat's send_message blocks until the
+	// user replies, so their defaults (Codex 300s, OpenCode 60s) end the
+	// turn mid-conversation.
+	ToolTimeoutSec int
 }
 
 func mcpServers() []mcpServer {
@@ -56,7 +57,7 @@ func mcpServers() []mcpServer {
 			EnvVars: []string{"AGENT_CHAT_PORT", "AGENT_CHAT_EVENT_LOG", "AGENT_CHAT_EXPORT_DIR", "SWE_SERVER_PORT", "SESSION_UUID", "MCP_AUTH_KEY"},
 			Note:    "AGENT_CHAT_EVENT_LOG (chat history / recordings) and AGENT_CHAT_EXPORT_DIR\n(streaming chat-log export, which chatlog_close needs) are read by\nagent-chat itself, so they have to be on the whitelist or Codex sessions\nsilently lose both.",
 			// One day: send_message waits for a human, not a machine.
-			CodexToolTimeoutSec: 86400,
+			ToolTimeoutSec: 86400,
 		},
 		{
 			Name: "swe-swe-playwright",
@@ -150,15 +151,17 @@ func mcpStdioSpecs() map[string]mcpStdioSpec {
 }
 
 // mcpOpencodeSpec is OpenCode's shape: a type tag and one flat command array.
+// Timeout is in milliseconds; unset, OpenCode's MCP client gives up after 60s.
 type mcpOpencodeSpec struct {
 	Type    string   `json:"type"`
 	Command []string `json:"command"`
+	Timeout int      `json:"timeout,omitempty"`
 }
 
 func mcpOpencodeSpecs() map[string]mcpOpencodeSpec {
 	out := make(map[string]mcpOpencodeSpec, len(mcpServers()))
 	for _, s := range mcpServers() {
-		out[s.Name] = mcpOpencodeSpec{Type: "local", Command: []string{"sh", "-c", s.Script()}}
+		out[s.Name] = mcpOpencodeSpec{Type: "local", Command: []string{"sh", "-c", s.Script()}, Timeout: s.ToolTimeoutSec * 1000}
 	}
 	return out
 }
@@ -204,8 +207,8 @@ func mcpCodexTOML() string {
 			}
 		}
 		fmt.Fprintf(&b, "env_vars = [%s]\n", tomlStrings(s.EnvVars))
-		if s.CodexToolTimeoutSec > 0 {
-			fmt.Fprintf(&b, "tool_timeout_sec = %d\n", s.CodexToolTimeoutSec)
+		if s.ToolTimeoutSec > 0 {
+			fmt.Fprintf(&b, "tool_timeout_sec = %d\n", s.ToolTimeoutSec)
 		}
 	}
 	return b.String()
@@ -222,8 +225,8 @@ func mcpCodexFlags() []string {
 			"-c", fmt.Sprintf("mcp_servers.%s.args=[%s]", s.Name, tomlStrings(s.Args)),
 			"-c", fmt.Sprintf("mcp_servers.%s.env_vars=[%s]", s.Name, tomlStrings(s.EnvVars)),
 		)
-		if s.CodexToolTimeoutSec > 0 {
-			out = append(out, "-c", fmt.Sprintf("mcp_servers.%s.tool_timeout_sec=%d", s.Name, s.CodexToolTimeoutSec))
+		if s.ToolTimeoutSec > 0 {
+			out = append(out, "-c", fmt.Sprintf("mcp_servers.%s.tool_timeout_sec=%d", s.Name, s.ToolTimeoutSec))
 		}
 	}
 	return out

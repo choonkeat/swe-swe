@@ -89,3 +89,18 @@ func TestMCPCodexAgentChatWaitsForTheUser(t *testing.T) {
 		t.Errorf("tool_timeout_sec set on %d servers, want 1: %s", n, flags)
 	}
 }
+
+// OpenCode's MCP client gives up on a tool call after 60s unless the server
+// sets its own timeout (in ms), so a send_message waiting for the user fails
+// and OpenCode repeats itself. Only agent-chat gets the long wait.
+func TestMCPOpencodeAgentChatWaitsForTheUser(t *testing.T) {
+	for name, spec := range mcpOpencodeSpecs() {
+		want := 0
+		if name == "swe-swe-agent-chat" {
+			want = 86400 * 1000
+		}
+		if spec.Timeout != want {
+			t.Errorf("%s timeout = %d, want %d", name, spec.Timeout, want)
+		}
+	}
+}

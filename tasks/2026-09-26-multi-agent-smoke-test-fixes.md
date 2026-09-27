@@ -1,6 +1,6 @@
 # Multi-agent smoke test: fixes
 
-## Status: IN PROGRESS - fixes 1 and 2 done and verified live
+## Status: IN PROGRESS - fixes 1 and 2 verified live, fix 3 done
 
 ## Context
 
@@ -65,6 +65,13 @@ consumed by that same `send_message` call and it answered.
 - **Estimate:** about 20 minutes.
 
 ### 3. OpenCode stops waiting after about 1 minute and repeats its last message
+
+**DONE**: OpenCode's MCP client passes the per-server `timeout` (ms) to
+`callTool`, falling back to `experimental.mcp_timeout`, then the MCP SDK
+default of 60000ms. swe-swe set neither, hence the ~60s give-up. Now
+`"timeout": 86400000` on `swe-swe-agent-chat` only (`mcpOpencodeSpecs`,
+shared `ToolTimeoutSec` field with the Codex fix); `opencode debug config`
+(1.18.32) accepts it.
 
 - **Symptom:** `send_message` re-sent the same text about 63s later (the user
   sees it twice), then `check_messages`, then idle. The next message woke it.
