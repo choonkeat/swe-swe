@@ -106,6 +106,28 @@ for 3m14s with no repeat, then that same call consumed the next message.
   `curl` that the port no longer answers.
 - **Estimate:** about 20 minutes.
 
+### 6. Second Codex session gets the first one's chat env
+
+**DONE** in 0181263b6; verified live 2026-09-27.
+
+- **Symptom:** (reported from another box on origin/main) a Codex session in
+  a worktree exported its chat log to `/workspace/agent-chats`. Reproduced
+  here: a second concurrent Codex session got NO agent-chat at all
+  (`listen tcp 0.0.0.0:4001: bind: address already in use`, env from the
+  first session, in `~/.codex/logs_2.sqlite`).
+- **Cause:** Codex 0.157 runs one shared `codex app-server --managed-daemon`
+  per `CODEX_HOME`. It launches every session's MCP servers with the env of
+  whichever session started the daemon, so `env_vars` forwards the wrong
+  `AGENT_CHAT_PORT`, `AGENT_CHAT_EXPORT_DIR`, `SESSION_UUID`, ...
+- **Fix:** all four Codex commands in `assistantConfigs` pass `--no-daemon`
+  (fork/resume inherit it through the base command).
+- **Verified:** two concurrent `--no-daemon` sessions (`/workspace` and a
+  worktree) each got their own agent-chat, port and export dir; worktree log
+  landed in the worktree; chat round trip, 7m40s `send_message` wait, and no
+  stray nudge after the reply all still pass.
+- **Caveat:** dockerless users on a Codex too old to know `--no-daemon`
+  would fail to start; the container always installs the latest Codex.
+
 ## Later (not ranked)
 
 - Chat messages sent right after `create_session` fail with
@@ -114,3 +136,7 @@ for 3m14s with no repeat, then that same call consumed the next message.
 - OpenCode and Pi don't treat a chat message starting with `/name` as a slash
   command to look up. Codex does. swe-swe could append the resolved command
   file path when a chat message starts with a known command.
+- Codex sessions never get `agent_session_id` captured (seen with and
+  without `--no-daemon`): the spawn watch gives up after 10s
+  (`agent_session_id.go:237`), but Codex writes its rollout file only at the
+  first turn. Fork falls back to fingerprint recovery.
