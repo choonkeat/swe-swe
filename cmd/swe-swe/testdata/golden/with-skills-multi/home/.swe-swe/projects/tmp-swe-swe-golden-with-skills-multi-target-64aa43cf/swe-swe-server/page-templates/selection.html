@@ -1180,6 +1180,14 @@
             flex-direction: column;
             gap: 6px;
         }
+        /* The branch list scrolls inside its own box past about 5 rows, so
+           a repo with many branches does not push Agent and Start far down.
+           The cut lands mid-row so the half row shows there is more. */
+        .branch-cards__sections {
+            max-height: 13rem;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
         .branch-cards__section {
             margin: 10px 0 0;
             font-size: 12px;
@@ -2039,7 +2047,7 @@
                                 <input type="text" class="dialog__input" id="new-session-branch" list="branch-list" placeholder="Leave blank for default branch" autocomplete="off" disabled>
                             </div>
                             <div class="branch-cards__msg" id="branch-cards-msg" aria-live="polite"></div>
-                            <div id="branch-cards-sections"></div>
+                            <div class="branch-cards__sections" id="branch-cards-sections"></div>
                         </div>
                         <datalist id="branch-list"></datalist>
                     </div>
