@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v2.41.1 - Chat Waits Properly
+
+### Fixes
+
+- **Codex and OpenCode chats no longer give up while you think**: the agent now waits up to a day for your reply instead of timing out.
+- **Each Codex session keeps its own settings**: sessions no longer share one background helper, so one session's chat setup cannot leak into another.
+- **OpenCode chat sessions can read swe-swe's slash commands** without stopping to ask permission in the terminal.
+- **A message sent to a brand-new session is no longer lost**: it waits up to 60 seconds for the session's chat to start.
+- **No extra "wake up" nudge** when the agent already picked up your message.
+- **The homepage lists sessions newest first**, whatever agent each one uses.
+- **New Session fits on a phone again**: a long branch list scrolls inside its own box, and the Start button has its space back at the bottom.
+
 ## v2.41.0 - Branch Cards
 
 ### Features
