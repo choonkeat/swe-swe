@@ -559,6 +559,10 @@ func TestAuthMiddlewareExemptPaths(t *testing.T) {
 		"/mcp",
 		"/api/session/some-uuid/browser/start",
 		"/api/autocomplete/some-uuid",
+		"/favicon.ico",
+		"/favicon.svg",
+		"/apple-touch-icon.png",
+		"/site.webmanifest",
 	}
 
 	for _, path := range exemptPaths {
@@ -756,5 +760,40 @@ func TestAuthLoginPostCorrectPassword(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected auth cookie to be set")
+	}
+}
+
+func TestAuthMiddlewareIconExemptionIsExact(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := authMiddleware(inner, "test-password")
+	for _, path := range []string{"/favicon.ico/x", "/session/abc/favicon.ico", "/favicon.icox"} {
+		req := httptest.NewRequest("GET", path, nil)
+		rr := httptest.NewRecorder()
+		handler.ServeHTTP(rr, req)
+		if rr.Code == http.StatusOK {
+			t.Errorf("path %s must still require auth, got 200", path)
+		}
+	}
+}
+
+func TestAuthVerifyHandlerAllowsIconsWithoutCookie(t *testing.T) {
+	h := authVerifyHandler("test-password")
+	cases := map[string]int{
+		"/favicon.svg":          http.StatusOK,
+		"/favicon.ico?v=2":      http.StatusOK,
+		"/apple-touch-icon.png": http.StatusOK,
+		"/":                     http.StatusFound,
+		"/session/abc":          http.StatusFound,
+	}
+	for uri, want := range cases {
+		req := httptest.NewRequest("GET", "/swe-swe-auth/verify", nil)
+		req.Header.Set("X-Forwarded-Uri", uri)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != want {
+			t.Errorf("verify %s without cookie: got %d, want %d", uri, rr.Code, want)
+		}
 	}
 }

@@ -333,6 +333,9 @@ func authRenderLoginForm(redirectURL, scope, errorMsg string) string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - swe-swe</title>
+    <link rel="icon" href="/favicon.ico" sizes="48x48">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <style>
         * { box-sizing: border-box; }
         body {
@@ -623,10 +626,37 @@ func authLogoutHandler() http.HandlerFunc {
 	}
 }
 
+// publicIconPaths are the favicon / app-icon files. They are served without a
+// login so the login page itself can show the icon; they expose nothing else.
+var publicIconPaths = map[string]bool{
+	"/favicon.ico":           true,
+	"/favicon.svg":           true,
+	"/favicon-16.png":        true,
+	"/favicon-32.png":        true,
+	"/apple-touch-icon.png":  true,
+	"/icon-192.png":          true,
+	"/icon-512.png":          true,
+	"/safari-pinned-tab.svg": true,
+	"/site.webmanifest":      true,
+}
+
+func isPublicIconPath(path string) bool {
+	return publicIconPaths[path]
+}
+
 // authVerifyHandler checks the session cookie and returns 200 (valid) or redirects to login.
 // Used by Traefik ForwardAuth middleware in compose mode.
 func authVerifyHandler(secret string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Icons load before login (Traefik ForwardAuth gate; compose mode).
+		uri := r.Header.Get("X-Forwarded-Uri")
+		if i := strings.IndexByte(uri, '?'); i >= 0 {
+			uri = uri[:i]
+		}
+		if isPublicIconPath(uri) {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		cookie, err := r.Cookie(authCookieName)
 		var scope string
 		if err == nil {
@@ -731,7 +761,8 @@ func authMiddleware(next http.Handler, secret string) http.Handler {
 			path == "/mcp" ||
 			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/browser/start")) ||
 			(strings.HasPrefix(path, "/api/session/") && strings.HasSuffix(path, "/mcp-less/restart")) ||
-			strings.HasPrefix(path, "/api/autocomplete/") {
+			strings.HasPrefix(path, "/api/autocomplete/") ||
+			isPublicIconPath(path) {
 			next.ServeHTTP(w, r)
 			return
 		}
