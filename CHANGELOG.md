@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## v2.42.0 - A Face in the Tab
+
+### Features
+
+- **swe-swe has its own icon**: the donated swe-swe icon now shows in the browser tab and on a phone's home screen, including on the login page before you sign in.
+- **Pick how screenshots are kept in the chat log**: New Session has a three-way choice under "Archive chat log" -- none, small, or original size -- remembered per browser.
+
+### Fixes
+
+- **A folder with an index.html opens as that page in Files** instead of always showing the file list.
+- **swe-swe starts again on a Mac using Colima**: leftover connection files from a previous run are removed at startup instead of stopping the boot.
+
 ## v2.41.1 - Chat Waits Properly
 
 ### Fixes
