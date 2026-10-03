@@ -47,3 +47,8 @@ tools/
 
 # local tooling
 .pi/
+
+# agent-chat export assets and generated viewer (not tracked)
+agent-chats/assets/
+agent-chats/*/assets/
+agent-chats/index.html
