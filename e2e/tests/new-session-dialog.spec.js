@@ -613,6 +613,75 @@ test.describe('new-session dialog', () => {
     expect(env).not.toContain('AGENT_CHAT_EXPORT_ASSETS');
   });
 
+  // Env vars field: the saved blob is masked until Edit; an edit rides this
+  // one POST (env_once=1) and leaves the saved blob alone unless the second
+  // option is picked. The POST is captured, not sent, so no session starts.
+  test('env vars edited in the dialog are one-off unless saved for future sessions', async ({ page }) => {
+    const posted = [];
+    await page.route('**/api/session/new', async (route) => {
+      const form = new URLSearchParams(route.request().postData() || '');
+      posted.push({ env: form.get('env') || '', once: form.get('env_once') });
+      await route.fulfill({ status: 204 });
+    });
+    const start = async () => {
+      const n = posted.length;
+      await page.click('#new-session-start-chat');
+      await expect.poll(() => posted.length).toBe(n + 1);
+      return posted[n];
+    };
+    const open = async () => {
+      await openCardsRepo(page);
+      await page.locator('.dialog__agent').first().click();
+      await page.click('.dialog__advanced-summary');
+    };
+
+    const branches = page.waitForResponse((r) => r.url().includes('/api/repo/branches'));
+    await openCardsRepo(page);
+    const initSha = (await (await branches).json()).init_sha;
+    expect(initSha).toBeTruthy();
+    const key = await page.evaluate((sha) => {
+      const k = 'swe-swe-env:' + window.location.origin + '|' + sha;
+      localStorage.setItem(k, 'SAVED=1\n');
+      return k;
+    }, initSha);
+    const saved = () => page.evaluate((k) => localStorage.getItem(k), key);
+    const textarea = page.locator('#new-session-env-vars');
+    const scope = page.locator('#new-session-env-scope');
+
+    // Untouched: masked, and the saved blob is sent as before.
+    await open();
+    await expect(page.locator('#new-session-env-masked-text')).toHaveText('1 variable saved on this device');
+    await expect(textarea).toBeHidden();
+    await expect(scope).toBeHidden();
+    let sent = await start();
+    expect(sent.env).toContain('SAVED=1');
+    expect(sent.once).toBeNull();
+
+    // Edited, default option: this session only.
+    await open();
+    await page.click('#new-session-env-edit');
+    await expect(textarea).toHaveValue('SAVED=1\n');
+    await expect(scope.locator('input[value="once"]')).toBeChecked();
+    await textarea.fill('ONCE=2');
+    sent = await start();
+    expect(sent.env).toContain('ONCE=2');
+    expect(sent.env).not.toContain('SAVED=1');
+    expect(sent.once).toBe('1');
+    expect(await saved()).toBe('SAVED=1\n');
+
+    // Edited, second option: saved for future sessions too.
+    await open();
+    await expect(textarea).toBeHidden();
+    await page.click('#new-session-env-edit');
+    await textarea.fill('KEEP=3');
+    await scope.locator('input[value="save"]').check();
+    sent = await start();
+    expect(sent.env).toContain('KEEP=3');
+    expect(sent.once).toBeNull();
+    expect(await saved()).toBe('KEEP=3');
+    await page.evaluate((k) => localStorage.removeItem(k), key);
+  });
+
   // Sketch screen D: "+ New branch" only ever makes something new.
   test('typing into + New branch picks existing cards and blocks online-copy names', async ({ page }) => {
     await openCardsRepo(page);

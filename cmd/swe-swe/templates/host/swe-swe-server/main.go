@@ -5436,6 +5436,10 @@ type SessionParams struct {
 	// way the blob reaches a brand-new browser session's process env. Never
 	// persisted; memory-only, exactly like set_env.
 	EnvRaw string
+	// EnvOnce says EnvRaw was edited in the New Session dialog for this
+	// session only: it replaces whatever the store holds (even when blank)
+	// and is pinned against the browser's automatic re-send of its saved blob.
+	EnvOnce bool
 }
 
 // stagedSession is a creation intent parked in pendingSessions until the first
@@ -5765,7 +5769,10 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	if p.InheritCredsFrom != "" {
 		inheritSessionEnv(p.InheritCredsFrom, p.UUID)
 	}
-	if p.EnvRaw != "" {
+	if p.EnvOnce {
+		setSessionEnv(p.UUID, p.EnvRaw)
+		pinSessionEnv(p.UUID)
+	} else if p.EnvRaw != "" {
 		setSessionEnv(p.UUID, p.EnvRaw)
 	}
 
@@ -6736,9 +6743,16 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				// current session is unaffected -- env is materialized at spawn.
 				var payload struct {
 					Raw string `json:"raw"`
+					// Auto is set by the browser's on-connect re-send of its
+					// saved blob (as opposed to the user pressing Save).
+					Auto bool `json:"auto"`
 				}
 				if err := json.Unmarshal(msg.Data, &payload); err != nil {
 					log.Printf("Session %s: set_env invalid payload: %v", sess.UUID, err)
+					continue
+				}
+				if payload.Auto && isSessionEnvPinned(sess.UUID) {
+					log.Printf("Session %s: kept this-session-only env vars, ignored automatic re-send of saved ones", sess.UUID)
 					continue
 				}
 				sessionCredStateMu.Lock()
@@ -8804,7 +8818,8 @@ func handleNewSessionAPI(w http.ResponseWriter, r *http.Request) {
 		// the session env store at materialization, before the PTY spawns, so a
 		// brand-new session actually gets the vars (a set_env over the WS would
 		// arrive after spawn -- too late). Memory-only, never persisted.
-		EnvRaw: r.FormValue("env"),
+		EnvRaw:  r.FormValue("env"),
+		EnvOnce: r.FormValue("env_once") == "1",
 	}, "new", "")
 
 	// Echo the dialog's params onto the redirect so the WS handler resolves the

@@ -2120,6 +2120,31 @@
                                 <span>Original <small style="opacity:.7;">as pasted, full size</small></span>
                             </label>
                         </fieldset>
+                        <!-- Env vars for this session. Starts as the values
+                             saved on this device for the repo (masked, like the
+                             Session Settings pane); Edit reveals them. An edit
+                             applies to this session only unless the second
+                             option is picked. Hidden when the repo has no
+                             identity to save under (see syncEnvField). -->
+                        <div class="dialog__field dialog__field--hidden" id="new-session-env-field" style="margin-top:14px;">
+                            <label class="dialog__label" for="new-session-env-vars">Env vars</label>
+                            <div id="new-session-env-masked" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                <span id="new-session-env-masked-text"></span>
+                                <button type="button" class="settings-env__btn" id="new-session-env-edit">Edit</button>
+                            </div>
+                            <textarea class="dialog__input" id="new-session-env-vars" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="KEY=value, one per line" style="font-family:monospace; resize:vertical;" hidden></textarea>
+                            <fieldset id="new-session-env-scope" style="border:0; margin:8px 0 0; padding:0;" hidden>
+                                <legend class="dialog__label">Use these env vars for</legend>
+                                <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                    <input type="radio" name="env-scope" value="once" checked>
+                                    <span>This session only</span>
+                                </label>
+                                <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                    <input type="radio" name="env-scope" value="save">
+                                    <span>This session and future sessions in this repo</span>
+                                </label>
+                            </fieldset>
+                        </div>
                     </details>
                     <!-- Env file hint -->
                     <div class="dialog__env-hint" id="new-session-env-hint" style="display: none;"></div>

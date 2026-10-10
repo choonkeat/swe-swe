@@ -190,7 +190,9 @@ export function planAutoSend(input) {
     // Repo env vars share the same trust gate, already cleared above.
     const envRaw = input.envRaw || '';
     if (envRaw.trim()) {
-        messages.push({ type: 'set_env', data: { raw: envRaw } });
+        // auto: the server keeps a session's this-session-only env vars (New
+        // Session dialog) instead of replacing them with this saved blob.
+        messages.push({ type: 'set_env', data: { raw: envRaw, auto: true } });
     }
 
     if (hosts.length === 0 && !haveKey) return nothing(REASON.NOTHING);

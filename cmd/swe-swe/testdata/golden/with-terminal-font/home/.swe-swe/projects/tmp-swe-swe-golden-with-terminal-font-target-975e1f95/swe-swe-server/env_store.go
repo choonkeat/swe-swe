@@ -50,7 +50,11 @@ func isReservedEnvKey(k string) bool {
 var (
 	// sessionEnvRaw[sid] -> raw KEY=VALUE blob from the Settings textarea.
 	sessionEnvRaw = map[string]string{}
-	sessionEnvMu  sync.RWMutex
+	// sessionEnvPinned[sid] marks a session started with env vars the user
+	// chose for that session only (New Session dialog, "This session only").
+	// The browser's automatic re-send of its SAVED blob must not replace them.
+	sessionEnvPinned = map[string]bool{}
+	sessionEnvMu     sync.RWMutex
 )
 
 func setSessionEnv(sid, raw string) {
@@ -81,7 +85,24 @@ func clearSessionEnv(sid string) {
 	}
 	sessionEnvMu.Lock()
 	delete(sessionEnvRaw, sid)
+	delete(sessionEnvPinned, sid)
 	sessionEnvMu.Unlock()
+}
+
+// pinSessionEnv marks the session's env blob as chosen for this session only.
+func pinSessionEnv(sid string) {
+	if sid == "" {
+		return
+	}
+	sessionEnvMu.Lock()
+	sessionEnvPinned[sid] = true
+	sessionEnvMu.Unlock()
+}
+
+func isSessionEnvPinned(sid string) bool {
+	sessionEnvMu.RLock()
+	defer sessionEnvMu.RUnlock()
+	return sessionEnvPinned[sid]
 }
 
 // sessionEnvVars parses the session's stored blob into KEY=VALUE entries,
@@ -116,6 +137,10 @@ func inheritSessionEnv(parentSID, childSID string) {
 	}
 	if raw, ok := getSessionEnvRaw(parentSID); ok {
 		setSessionEnv(childSID, raw)
+	}
+	// A child of a this-session-only parent keeps the parent's values too.
+	if isSessionEnvPinned(parentSID) {
+		pinSessionEnv(childSID)
 	}
 }
 

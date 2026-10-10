@@ -233,6 +233,7 @@ test('planAutoSend: repo env vars ride along when present', () => {
     assert.strictEqual(p.messages.length, 2);
     assert.strictEqual(p.messages[1].type, 'set_env');
     assert.strictEqual(p.messages[1].data.raw, 'FOO=bar\n');
+    assert.strictEqual(p.messages[1].data.auto, true);
 });
 
 test('planAutoSend: whitespace-only env blob is not sent', () => {

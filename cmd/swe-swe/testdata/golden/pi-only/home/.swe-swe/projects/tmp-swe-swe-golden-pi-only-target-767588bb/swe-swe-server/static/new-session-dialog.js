@@ -262,6 +262,7 @@
         dialogState.initSha = '';
         dialogState.remoteHost = '';
         dialogState.prefillName = '';
+        syncEnvField();
         // Whatever repo the in-flight checks were for, it is not the one the
         // user is now looking at.
         abortPickCheck();
@@ -482,6 +483,7 @@
     // moves the user off what they chose.
     function populateBranches(branchData) {
         dialogState.initSha = branchData.init_sha || '';
+        syncEnvField();
         if (branchData.remoteHost) dialogState.remoteHost = branchData.remoteHost;
         var branches = branchData.branches || [];
         branchList.innerHTML = '';
@@ -1803,6 +1805,21 @@
         // the set_env WS message. Silently skipped when init_sha is unknown
         // (non-git repo) or no blob is saved for this repo.
         var envBlob = readRepoEnvBlob(dialogState.initSha);
+        // Env vars edited in the dialog replace the saved blob for this
+        // session. "This session only" leaves the saved blob alone and tells
+        // the server (env_once) to keep these against the session page's
+        // automatic re-send of the saved one; the other option saves them
+        // first, exactly as the Session Settings Save button would.
+        var envOnce = false;
+        if (envEditing && dialogState.initSha) {
+            envBlob = envTextarea.value;
+            var scope = envScopeBox.querySelector('input[name="env-scope"]:checked');
+            if (scope && scope.value === 'save') {
+                writeRepoEnvBlob(dialogState.initSha, envBlob);
+            } else {
+                envOnce = true;
+            }
+        }
         // Chat-log archive opt-out: unchecking the dialog checkbox stages an
         // explicit empty AGENT_CHAT_EXPORT_DIR= into the env blob. The server's
         // presence-checked default (defaultChatExportEnv) then skips its
@@ -1826,6 +1843,13 @@
             envInput.name = 'env';
             envInput.value = envBlob;
             form.appendChild(envInput);
+        }
+        if (envOnce) {
+            var onceInput = document.createElement('input');
+            onceInput.type = 'hidden';
+            onceInput.name = 'env_once';
+            onceInput.value = '1';
+            form.appendChild(onceInput);
         }
         document.body.appendChild(form);
         form.submit();
@@ -1868,6 +1892,63 @@
         } catch (e) {
             return '';
         }
+    }
+
+    function writeRepoEnvBlob(initSha, raw) {
+        try {
+            var key = 'swe-swe-env:' + window.location.origin + '|' + initSha;
+            if (!raw || !raw.trim()) localStorage.removeItem(key);
+            else localStorage.setItem(key, raw);
+        } catch (e) { /* storage blocked: the session still gets the vars */ }
+    }
+
+    // Env vars field: masked count of the saved vars until Edit is pressed
+    // (same rule as the Session Settings pane -- a shared screen never shows
+    // secrets by default), then an editable box plus the scope choice. Reset
+    // to masked + "This session only" whenever the repo changes.
+    var envField = document.getElementById('new-session-env-field');
+    var envMasked = document.getElementById('new-session-env-masked');
+    var envMaskedText = document.getElementById('new-session-env-masked-text');
+    var envEditBtn = document.getElementById('new-session-env-edit');
+    var envTextarea = document.getElementById('new-session-env-vars');
+    var envScopeBox = document.getElementById('new-session-env-scope');
+    var envEditing = false;
+    function countEnvLines(raw) {
+        return raw.split('\n').filter(function(line) {
+            var t = line.trim();
+            return t && t.charAt(0) !== '#' && t.indexOf('=') > 0;
+        }).length;
+    }
+    function syncEnvField() {
+        if (!envField) return;
+        envEditing = false;
+        envTextarea.value = '';
+        envTextarea.hidden = true;
+        envScopeBox.hidden = true;
+        envScopeBox.querySelector('input[value="once"]').checked = true;
+        envMasked.style.display = 'flex';
+        // No repo identity (non-git folder, new project): nothing saved to
+        // show and nowhere to save, so the field stays out of the way.
+        if (!dialogState.initSha) {
+            envField.classList.add('dialog__field--hidden');
+            return;
+        }
+        var n = countEnvLines(readRepoEnvBlob(dialogState.initSha));
+        envMaskedText.textContent = n === 0
+            ? 'None saved on this device'
+            : n + (n === 1 ? ' variable' : ' variables') + ' saved on this device';
+        envEditBtn.textContent = n === 0 ? 'Add' : 'Edit';
+        envField.classList.remove('dialog__field--hidden');
+    }
+    if (envEditBtn) {
+        envEditBtn.addEventListener('click', function() {
+            envEditing = true;
+            envTextarea.value = readRepoEnvBlob(dialogState.initSha);
+            envMasked.style.display = 'none';
+            envTextarea.hidden = false;
+            envScopeBox.hidden = false;
+            envTextarea.focus();
+        });
     }
 
     // Start Agent Terminal session

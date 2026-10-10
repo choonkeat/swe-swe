@@ -112,6 +112,30 @@ func TestInheritSessionEnv(t *testing.T) {
 	inheritSessionEnv("", child)
 }
 
+// TestSessionEnvPin: a this-session-only blob is marked, the mark follows a
+// child session, and ending the session drops it.
+func TestSessionEnvPin(t *testing.T) {
+	parent, child := "sid-pin-parent", "sid-pin-child"
+	defer clearSessionEnv(parent)
+	defer clearSessionEnv(child)
+	if isSessionEnvPinned(parent) {
+		t.Fatal("fresh session reported as pinned")
+	}
+	setSessionEnv(parent, "ONCE=1\n")
+	pinSessionEnv(parent)
+	if !isSessionEnvPinned(parent) {
+		t.Fatal("pinSessionEnv did not pin")
+	}
+	inheritSessionEnv(parent, child)
+	if !isSessionEnvPinned(child) {
+		t.Error("child of a pinned parent is not pinned")
+	}
+	clearSessionEnv(parent)
+	if isSessionEnvPinned(parent) {
+		t.Error("clearSessionEnv left the pin behind")
+	}
+}
+
 // TestInheritedEnvReachesChildProcess is a REGRESSION test for the spawn-time
 // ordering bug where a var saved for one session did not reach a newly spawned
 // session's PROCESS env -- only its in-memory store. The store must be
