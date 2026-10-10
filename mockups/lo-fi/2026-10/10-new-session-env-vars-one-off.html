@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - New Session env vars (one-off by default)</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- sketch-local layout --- */
+  .cols{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start;}
+  .dialog{flex:1 1 380px;max-width:460px;}
+  .side{flex:1 1 300px;}
+  .section{border-top:1px dashed var(--line);margin-top:14px;padding-top:12px;}
+  .area{border:1px dashed var(--line);border-radius:3px;padding:8px 10px;min-height:92px;background:#fff;}
+  .check{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;}
+  .tick{width:14px;height:14px;border:1px solid var(--line);border-radius:2px;flex:0 0 auto;
+        font-size:11px;line-height:12px;text-align:center;}
+  .tick.radio{border-radius:50%;}
+  .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;}
+  .node.wide{min-width:170px;max-width:170px;}
+  h2{font-size:14px;margin:30px 0 10px;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>New Session env vars (one-off by default)</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only.</p>
+
+  <div class="cols">
+
+    <!-- THE DIALOG -->
+    <div class="box dialog">
+      <div class="label">Dialog</div>
+      <div class="title">New Session</div>
+
+      <div class="label">Repo / branch</div>
+      <div class="scribble mid"></div>
+      <div class="label">Agent</div>
+      <div class="scribble short"></div>
+
+      <div class="section">
+        <div class="title">v Appearance &amp; Advanced</div>
+        <div class="scribble long"></div>
+        <div class="scribble mid"></div>
+
+        <div class="label" style="margin-top:14px;">Env vars</div>
+        <div class="area">
+          <div class="scribble mid"></div>
+          <div class="scribble short"></div>
+          <div class="scribble mid"></div>
+          <div class="note">(filled in with the saved values; editable)</div>
+        </div>
+        <div class="label" style="margin-top:12px;">Use these env vars for</div>
+        <div class="check">
+          <span class="tick radio">o</span>
+          <span>This session only</span>
+        </div>
+        <div class="check">
+          <span class="tick radio"></span>
+          <span>This session and future sessions in this repo</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <span class="btn">Cancel</span>
+        <span class="btn filled">Start</span>
+      </div>
+    </div>
+
+    <!-- MARGIN NOTES -->
+    <div class="side">
+      <div class="box">
+        <div class="label">Notes</div>
+        <p class="note">1. Box opens filled with the saved values for this repo.</p>
+        <p class="note">2. "This session only" is selected every time the dialog opens.</p>
+        <p class="note">3. Nothing is saved until Start is pressed.</p>
+        <p class="note">4. The choice covers env vars only. No other dialog setting is saved by it.</p>
+        <p class="note">5. Session Settings keeps its own "Save env vars" button, unchanged.</p>
+      </div>
+      <div class="box" style="margin-top:14px;">
+        <div class="label">Open question</div>
+        <p class="note">Hide the two options until the box has been edited?</p>
+      </div>
+    </div>
+  </div>
+
+  <h2>What happens on Start</h2>
+  <div class="flow">
+    <div class="box node">
+      <div class="label">Dialog</div>
+      <div class="title">Edit env vars</div>
+    </div>
+    <div class="arrow">-&gt;</div>
+    <div class="box node">
+      <div class="label">Action</div>
+      <div class="title">Start</div>
+    </div>
+    <div class="arrow">-&gt;</div>
+    <div class="diamond"><span>Which option?</span></div>
+    <div class="arrow">-&gt;</div>
+    <div>
+      <div class="box node wide">
+        <div class="label">This session only (default)</div>
+        <div class="title">This session: edited values</div>
+        <div class="note">Saved values: untouched</div>
+      </div>
+      <div class="box node wide" style="margin-top:10px;">
+        <div class="label">This + future sessions</div>
+        <div class="title">This session: edited values</div>
+        <div class="note">Saved values: replaced</div>
+      </div>
+    </div>
+    <div class="arrow">-&gt;</div>
+    <div class="box node wide">
+      <div class="label">Next time</div>
+      <div class="title">Dialog shows the saved values</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
