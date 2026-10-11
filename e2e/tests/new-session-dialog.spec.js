@@ -592,7 +592,11 @@ test.describe('new-session dialog', () => {
     await openCardsRepo(page);
     await page.locator('.dialog__agent').first().click();
     await page.click('.dialog__advanced-summary');
+    const chatRow = page.locator('.adv-row[data-adv="chatlog"]');
+    await expect(chatRow.locator('[data-adv-val]')).toHaveText('Archived, screenshots: placeholders');
     const picker = page.locator('#new-session-chatlog-assets');
+    await expect(picker).toBeHidden();
+    await chatRow.locator('.adv-row__toggle').click();
     await expect(picker.locator('input[value="none"]')).toBeChecked();
 
     expect(await start()).toContain('AGENT_CHAT_EXPORT_ASSETS=none');
@@ -604,10 +608,13 @@ test.describe('new-session dialog', () => {
     await openCardsRepo(page);
     await page.locator('.dialog__agent').first().click();
     await page.click('.dialog__advanced-summary');
+    await expect(chatRow.locator('[data-adv-val]')).toHaveText('Archived, screenshots: small');
+    await chatRow.locator('.adv-row__toggle').click();
     await expect(picker.locator('input[value="small"]')).toBeChecked();
 
     await page.uncheck('#new-session-chatlog-archive');
     await expect(picker.locator('input[value="small"]')).toBeDisabled();
+    await expect(chatRow.locator('[data-adv-val]')).toHaveText('Not archived');
     const env = await start();
     expect(env).toContain('AGENT_CHAT_EXPORT_DIR=');
     expect(env).not.toContain('AGENT_CHAT_EXPORT_ASSETS');
@@ -648,21 +655,37 @@ test.describe('new-session dialog', () => {
     const textarea = page.locator('#new-session-env-vars');
     const scope = page.locator('#new-session-env-scope');
 
-    // Untouched: masked, and the saved blob is sent as before.
+    const envRow = page.locator('.adv-row[data-adv="env"]');
+    const envVal = envRow.locator('[data-adv-val]');
+    const envToggle = envRow.locator('.adv-row__toggle');
+
+    // Untouched: only a count shows, and the saved blob is sent as before.
     await open();
-    await expect(page.locator('#new-session-env-masked-text')).toHaveText('1 variable saved on this device');
+    await expect(envVal).toHaveText('1 saved');
     await expect(textarea).toBeHidden();
     await expect(scope).toBeHidden();
     let sent = await start();
     expect(sent.env).toContain('SAVED=1');
     expect(sent.once).toBeNull();
 
-    // Edited, default option: this session only.
+    // Opened but left as saved: still not a one-off.
     await open();
-    await page.click('#new-session-env-edit');
+    await envToggle.click();
     await expect(textarea).toHaveValue('SAVED=1\n');
     await expect(scope.locator('input[value="once"]')).toBeChecked();
+    sent = await start();
+    expect(sent.env).toContain('SAVED=1');
+    expect(sent.once).toBeNull();
+
+    // Edited, default option: this session only. Opening another row closes
+    // this one and keeps the edit.
+    await open();
+    await envToggle.click();
     await textarea.fill('ONCE=2');
+    await expect(envVal).toHaveText('1, this session only');
+    await page.locator('.adv-row[data-adv="flags"] .adv-row__toggle').click();
+    await expect(textarea).toBeHidden();
+    await expect(page.locator('#new-session-extra-args')).toBeVisible();
     sent = await start();
     expect(sent.env).toContain('ONCE=2');
     expect(sent.env).not.toContain('SAVED=1');
@@ -672,9 +695,10 @@ test.describe('new-session dialog', () => {
     // Edited, second option: saved for future sessions too.
     await open();
     await expect(textarea).toBeHidden();
-    await page.click('#new-session-env-edit');
+    await envToggle.click();
     await textarea.fill('KEEP=3');
     await scope.locator('input[value="save"]').check();
+    await expect(envVal).toHaveText('1, saved for future sessions');
     sent = await start();
     expect(sent.env).toContain('KEEP=3');
     expect(sent.once).toBeNull();

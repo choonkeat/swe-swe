@@ -410,6 +410,7 @@
             newSessionColorHex.placeholder = 'Use server default';
             dialogState.sessionColor = '';
         }
+        syncAdvSummaries();
     }
 
     // Fetch repos and populate dropdown with dynamic options.
@@ -1812,11 +1813,12 @@
         // first, exactly as the Session Settings Save button would.
         var envOnce = false;
         if (envEditing && dialogState.initSha) {
+            var savedBlob = envBlob;
             envBlob = envTextarea.value;
-            var scope = envScopeBox.querySelector('input[name="env-scope"]:checked');
-            if (scope && scope.value === 'save') {
+            if (envScopeValue() === 'save') {
                 writeRepoEnvBlob(dialogState.initSha, envBlob);
-            } else {
+            } else if (envBlob !== savedBlob) {
+                // Opened but left as saved: nothing one-off about it.
                 envOnce = true;
             }
         }
@@ -1902,14 +1904,11 @@
         } catch (e) { /* storage blocked: the session still gets the vars */ }
     }
 
-    // Env vars field: masked count of the saved vars until Edit is pressed
-    // (same rule as the Session Settings pane -- a shared screen never shows
-    // secrets by default), then an editable box plus the scope choice. Reset
-    // to masked + "This session only" whenever the repo changes.
+    // Env vars row: the closed row shows only a count of the saved vars (same
+    // rule as the Session Settings pane -- a shared screen never shows secrets
+    // by default); opening it fills the box with them plus the scope choice.
+    // Reset to closed + "This session only" whenever the repo changes.
     var envField = document.getElementById('new-session-env-field');
-    var envMasked = document.getElementById('new-session-env-masked');
-    var envMaskedText = document.getElementById('new-session-env-masked-text');
-    var envEditBtn = document.getElementById('new-session-env-edit');
     var envTextarea = document.getElementById('new-session-env-vars');
     var envScopeBox = document.getElementById('new-session-env-scope');
     var envEditing = false;
@@ -1919,37 +1918,81 @@
             return t && t.charAt(0) !== '#' && t.indexOf('=') > 0;
         }).length;
     }
+    function envScopeValue() {
+        var picked = envScopeBox.querySelector('input[name="env-scope"]:checked');
+        return picked ? picked.value : 'once';
+    }
     function syncEnvField() {
         if (!envField) return;
         envEditing = false;
         envTextarea.value = '';
-        envTextarea.hidden = true;
-        envScopeBox.hidden = true;
         envScopeBox.querySelector('input[value="once"]').checked = true;
-        envMasked.style.display = 'flex';
+        setAdvRowOpen(envField, false);
         // No repo identity (non-git folder, new project): nothing saved to
-        // show and nowhere to save, so the field stays out of the way.
-        if (!dialogState.initSha) {
-            envField.classList.add('dialog__field--hidden');
-            return;
-        }
-        var n = countEnvLines(readRepoEnvBlob(dialogState.initSha));
-        envMaskedText.textContent = n === 0
-            ? 'None saved on this device'
-            : n + (n === 1 ? ' variable' : ' variables') + ' saved on this device';
-        envEditBtn.textContent = n === 0 ? 'Add' : 'Edit';
-        envField.classList.remove('dialog__field--hidden');
+        // show and nowhere to save, so the row stays out of the way.
+        envField.classList.toggle('dialog__field--hidden', !dialogState.initSha);
+        syncAdvSummaries();
     }
-    if (envEditBtn) {
-        envEditBtn.addEventListener('click', function() {
-            envEditing = true;
-            envTextarea.value = readRepoEnvBlob(dialogState.initSha);
-            envMasked.style.display = 'none';
-            envTextarea.hidden = false;
-            envScopeBox.hidden = false;
-            envTextarea.focus();
+
+    // "Appearance & advanced" rows: one line per setting (name, current value,
+    // Change). Opening a row closes the others.
+    var advRows = Array.prototype.slice.call(document.querySelectorAll('.dialog__advanced .adv-row'));
+    function setAdvRowOpen(row, open) {
+        var body = row.querySelector('.adv-row__body');
+        var toggle = row.querySelector('.adv-row__toggle');
+        body.hidden = !open;
+        toggle.textContent = open ? 'Close' : 'Change';
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function advSummary(key) {
+        if (key === 'color') return newSessionColorHex.value.trim() || 'Default';
+        if (key === 'flags') return extraArgsInput.value.trim() || 'None';
+        if (key === 'chatlog') {
+            if (chatlogArchiveBox && !chatlogArchiveBox.checked) return 'Not archived';
+            var shots = { none: 'placeholders', small: 'small', original: 'original' }[chatlogAssetsValue()];
+            return 'Archived, screenshots: ' + shots;
+        }
+        var saved = readRepoEnvBlob(dialogState.initSha);
+        if (envEditing) {
+            var n = countEnvLines(envTextarea.value);
+            if (envScopeValue() === 'save') return n + ', saved for future sessions';
+            if (envTextarea.value !== saved) return n + ', this session only';
+        }
+        var m = countEnvLines(saved);
+        return m === 0 ? 'None' : m + ' saved';
+    }
+    function syncAdvSummaries() {
+        // Callable (hoisted) before the rows are looked up during page load.
+        if (!advRows) return;
+        advRows.forEach(function(row) {
+            row.querySelector('[data-adv-val]').textContent = advSummary(row.dataset.adv);
         });
     }
+    advRows.forEach(function(row) {
+        row.querySelector('.adv-row__toggle').addEventListener('click', function() {
+            var open = row.querySelector('.adv-row__body').hidden;
+            advRows.forEach(function(other) { setAdvRowOpen(other, open && other === row); });
+            if (open && row === envField && !envEditing) {
+                envEditing = true;
+                envTextarea.value = readRepoEnvBlob(dialogState.initSha);
+            }
+            if (open) {
+                var first = row.querySelector('.adv-row__body input[type="text"], .adv-row__body textarea, .adv-row__body input');
+                if (first) first.focus();
+            }
+            syncAdvSummaries();
+        });
+    });
+    var advDetails = document.querySelector('.dialog__advanced');
+    if (advDetails) {
+        // Values set by code (prefill, repo change) fire no events; the rows
+        // are only visible while the section is open, so re-read on opening.
+        advDetails.addEventListener('toggle', syncAdvSummaries);
+        advDetails.addEventListener('input', syncAdvSummaries);
+        advDetails.addEventListener('change', syncAdvSummaries);
+        advDetails.addEventListener('click', syncAdvSummaries);
+    }
+    syncAdvSummaries();
 
     // Start Agent Terminal session
     startTerminalBtn.addEventListener('click', function() {

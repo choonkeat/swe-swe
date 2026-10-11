@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lo-fi - New Session: tidy "Appearance &amp; advanced" (3 options)</title>
+<!-- Source: /swe-swe:mockup-lo-fi -- lo-fi wireframe. Deliberately rough; do not polish. -->
+<style>
+  :root{
+    --ink:#141414;        /* text */
+    --paper:#f7f6f2;      /* off-white */
+    --grey:#8b8b86;       /* label grey */
+    --line:#9a9a94;       /* box lines */
+    --grey-lite:#e2e1db;  /* placeholder fill */
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    padding:28px 24px 80px;
+    line-height:1.35;
+  }
+  .sheet{max-width:1000px;margin:0 auto;}
+  .sheet > h1{font-size:21px;margin:0 0 4px;}
+  .sheet > .caption{font-size:13px;color:#555;margin:0 0 22px;}
+
+  /* --- plain box: the wireframe building block --- */
+  .box{
+    border:1px solid var(--line);
+    border-radius:3px;
+    background:#fff;
+    padding:14px 16px;
+  }
+  .label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);}
+  .title{font-weight:600;font-size:14px;margin:2px 0 10px;}
+
+  /* --- scribble = "text we are NOT specifying yet" --- */
+  .scribble{height:9px;background:var(--grey-lite);border:1px dashed #cfcec8;border-radius:2px;margin:7px 0;}
+  .scribble.short{width:45%;}
+  .scribble.mid{width:70%;}
+  .scribble.long{width:92%;}
+
+  /* --- button: a thin box with a verb, no colour --- */
+  .btn{
+    display:inline-block;border:1px solid var(--line);border-radius:3px;
+    padding:9px 18px;font-weight:600;font-size:14px;background:#fff;text-align:center;
+  }
+  .btn.filled{background:var(--ink);color:var(--paper);border-color:var(--ink);}  /* the single primary action */
+
+  /* --- input: an underline / dashed block with a hint, never a real field --- */
+  .input{border:0;border-bottom:1px solid var(--line);min-width:160px;
+         padding:2px 2px 6px;color:var(--grey);font-size:13px;}
+
+  /* --- margin note (plain, greyscale) --- */
+  .note{font-size:12px;color:#555;}
+
+  /* --- flow primitives (for workflow / journey sketches) --- */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;}
+  .node{min-width:118px;max-width:118px;}
+  .arrow{font-size:16px;color:var(--grey);flex:0 0 auto;}
+  .diamond{
+    min-width:96px;max-width:96px;height:96px;
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-weight:600;font-size:12px;background:#fff;
+    border:1px solid var(--line);transform:rotate(45deg);border-radius:3px;
+  }
+  .diamond > span{transform:rotate(-45deg);display:block;}
+  .branches{display:flex;flex-wrap:wrap;gap:14px;margin-top:14px;font-size:12px;color:#333;}
+
+  /* --- sketch-local layout --- */
+  .cols{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start;}
+  .col{flex:1 1 290px;min-width:270px;}
+  .col > h2{font-size:15px;margin:0 0 2px;}
+  .col > .note{margin:0 0 10px;min-height:32px;}
+  .top{border-bottom:1px dashed var(--line);padding-bottom:10px;margin-bottom:10px;}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;
+       border-top:1px solid var(--grey-lite);padding:8px 0;font-size:13px;}
+  .row:first-of-type{border-top:0;}
+  .row .val{color:var(--grey);flex:1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row .go{font-size:12px;border:1px solid var(--line);border-radius:3px;padding:2px 8px;flex:0 0 auto;}
+  .open{border:1px solid var(--line);border-radius:3px;padding:8px 10px;margin:2px 0 8px;}
+  .area{border:1px dashed var(--line);border-radius:3px;padding:6px 8px;min-height:54px;}
+  .pick{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:6px;}
+  .dot{width:13px;height:13px;border:1px solid var(--line);border-radius:50%;flex:0 0 auto;
+       font-size:10px;line-height:11px;text-align:center;}
+  .sq{width:13px;height:13px;border:1px solid var(--line);border-radius:2px;flex:0 0 auto;
+      font-size:10px;line-height:11px;text-align:center;}
+  .fold{font-weight:600;font-size:13px;border-top:1px solid var(--grey-lite);padding:8px 0;
+        display:flex;justify-content:space-between;gap:8px;}
+  .fold .val{font-weight:400;color:var(--grey);}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:3px;font-size:12px;}
+  .seg > span{padding:4px 9px;}
+  .seg > span + span{border-left:1px solid var(--line);}
+  .seg > .on{background:var(--grey-lite);font-weight:600;}
+  .drop{border:1px solid var(--line);border-radius:3px;padding:3px 8px;font-size:12px;white-space:nowrap;}
+  .actions{display:flex;justify-content:flex-end;margin-top:14px;}
+  .verdict{margin-top:10px;}
+  h2.sec{font-size:14px;margin:30px 0 10px;}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1>New Session: tidy "Appearance &amp; advanced" (3 options)</h1>
+  <p class="caption">Lo-fi wireframe -- rough on purpose. Structure &amp; flow only.</p>
+
+  <div class="cols">
+
+    <!-- OPTION A -->
+    <div class="col">
+      <h2>A. One line per setting</h2>
+      <p class="note">Every setting is one row. "Change" opens only that row.</p>
+      <div class="box">
+        <div class="top">
+          <div class="label">Where / Branch / Agent</div>
+          <div class="scribble mid"></div>
+          <div class="scribble short"></div>
+        </div>
+        <div class="title">v Appearance &amp; advanced</div>
+
+        <div class="row"><span>Theme colour</span><span class="val">Default</span><span class="go">Change</span></div>
+        <div class="row"><span>Extra CLI flags</span><span class="val">None</span><span class="go">Change</span></div>
+        <div class="row"><span>Chat log</span><span class="val">Archived, placeholders</span><span class="go">Change</span></div>
+        <div class="row"><span>Env vars</span><span class="val">2 saved</span><span class="go">Close</span></div>
+        <div class="open">
+          <div class="area"><div class="scribble mid"></div><div class="scribble short"></div></div>
+          <div class="pick"><span class="dot">o</span><span>This session only</span></div>
+          <div class="pick"><span class="dot"></span><span>This + future sessions in this repo</span></div>
+        </div>
+
+        <div class="actions"><span class="btn filled">Start</span></div>
+      </div>
+      <div class="box verdict">
+        <div class="label">For</div>
+        <p class="note">Shortest. Current values readable at a glance. A new setting later = one more row.</p>
+        <div class="label">Against</div>
+        <p class="note">One extra click to change anything. Biggest rebuild.</p>
+      </div>
+    </div>
+
+    <!-- OPTION B -->
+    <div class="col">
+      <h2>B. Three named groups</h2>
+      <p class="note">Settings sorted by what they are about. Each group folds, with a summary.</p>
+      <div class="box">
+        <div class="top">
+          <div class="label">Where / Branch / Agent</div>
+          <div class="scribble mid"></div>
+          <div class="scribble short"></div>
+        </div>
+
+        <div class="fold"><span>&gt; Appearance</span><span class="val">Default colour</span></div>
+        <div class="fold"><span>&gt; Chat log</span><span class="val">Archived, placeholders</span></div>
+        <div class="fold"><span>v Agent start-up</span><span class="val"></span></div>
+        <div class="open">
+          <div class="label">Extra CLI flags</div>
+          <div class="input">hint</div>
+          <div class="label" style="margin-top:10px;">Env vars</div>
+          <div class="area"><div class="scribble mid"></div><div class="scribble short"></div></div>
+          <div class="pick"><span class="dot">o</span><span>This session only</span></div>
+          <div class="pick"><span class="dot"></span><span>This + future sessions in this repo</span></div>
+        </div>
+
+        <div class="actions"><span class="btn filled">Start</span></div>
+      </div>
+      <div class="box verdict">
+        <div class="label">For</div>
+        <p class="note">Related things sit together. Group names say where to look.</p>
+        <div class="label">Against</div>
+        <p class="note">Three folds for four settings. An open group is still tall.</p>
+      </div>
+    </div>
+
+    <!-- OPTION C -->
+    <div class="col">
+      <h2>C. Same layout, smaller controls</h2>
+      <p class="note">Nothing moves. Each pick-one list shrinks to one line.</p>
+      <div class="box">
+        <div class="top">
+          <div class="label">Where / Branch / Agent</div>
+          <div class="scribble mid"></div>
+          <div class="scribble short"></div>
+        </div>
+        <div class="title">v Appearance &amp; advanced</div>
+
+        <div class="label">Theme colour</div>
+        <div class="input">hint</div>
+        <div class="label" style="margin-top:10px;">Extra CLI flags</div>
+        <div class="input">hint</div>
+
+        <div class="pick" style="margin-top:12px;justify-content:space-between;">
+          <span style="display:flex;gap:8px;align-items:center;"><span class="sq">x</span>Archive chat log</span>
+          <span class="drop">Screenshots: placeholders v</span>
+        </div>
+
+        <div class="label" style="margin-top:12px;">Env vars</div>
+        <div class="area"><div class="scribble mid"></div><div class="scribble short"></div></div>
+        <div class="pick">
+          <span>Use for</span>
+          <span class="seg"><span class="on">This session</span><span>+ future sessions</span></span>
+        </div>
+
+        <div class="actions"><span class="btn filled">Start</span></div>
+      </div>
+      <div class="box verdict">
+        <div class="label">For</div>
+        <p class="note">Smallest change. No extra clicks. About 5 lines shorter.</p>
+        <div class="label">Against</div>
+        <p class="note">Still one long list. Gets messy again with the next setting.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <h2 class="sec">Notes</h2>
+  <div class="box">
+    <p class="note">1. Env vars stay hidden until opened in all three (same rule as today).</p>
+    <p class="note">2. "This session only" stays the default in all three.</p>
+    <p class="note">3. A and C can be combined: one line per setting, with the smaller controls inside an opened row.</p>
+  </div>
+
+</div>
+</body>
+</html>

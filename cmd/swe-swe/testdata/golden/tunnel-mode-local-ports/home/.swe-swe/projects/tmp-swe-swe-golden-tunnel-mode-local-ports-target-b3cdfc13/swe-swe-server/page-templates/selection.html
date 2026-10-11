@@ -1562,10 +1562,38 @@
         .dialog__advanced-summary:hover {
             color: var(--text-primary);
         }
-        /* The last field inside the disclosure would otherwise double up its
-           own bottom margin with the details' own. */
-        .dialog__advanced .dialog__field:last-child {
-            margin-bottom: 0;
+        /* One line per advanced setting; only the opened row grows. */
+        .adv-row {
+            border-top: 1px solid var(--border-primary);
+        }
+        .adv-row__head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 14px;
+        }
+        .adv-row__name {
+            flex: 0 0 auto;
+            color: var(--text-primary);
+        }
+        .adv-row__val {
+            flex: 1 1 0;
+            min-width: 0;
+            text-align: right;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .adv-row__toggle {
+            flex: 0 0 auto;
+        }
+        .adv-row__body {
+            padding: 2px 0 14px;
+        }
+        .adv-row__body[hidden] {
+            display: none;
         }
 
         /* Hide original elements upgraded by combo-box */
@@ -2075,75 +2103,99 @@
                          first-time user is asked for. -->
                     <details class="dialog__advanced">
                         <summary class="dialog__advanced-summary">Appearance &amp; advanced</summary>
-                        <!-- Theme color (optional) -->
-                        <div class="dialog__field">
-                            <label class="dialog__label">Theme Color (optional)</label>
-                            <div class="color-picker__custom" style="margin-top: 8px;">
-                                <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
-                                <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default">
-                                <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                        <!-- One line per setting: name, current value, Change.
+                             Change opens that row alone (see the adv-row code in
+                             new-session-dialog.js), so the section stays four
+                             short rows however much each setting holds. -->
+                        <div class="adv-row" data-adv="color">
+                            <div class="adv-row__head">
+                                <span class="adv-row__name">Theme color</span>
+                                <span class="adv-row__val" data-adv-val></span>
+                                <button type="button" class="settings-env__btn adv-row__toggle" aria-expanded="false" aria-label="Change Theme color">Change</button>
+                            </div>
+                            <div class="adv-row__body" hidden>
+                                <div class="color-picker__custom">
+                                    <input type="color" class="color-picker__input" id="new-session-color-input" value="#7c3aed">
+                                    <input type="text" class="color-picker__hex" id="new-session-color-hex" value="" placeholder="Use server default" aria-label="Theme color">
+                                    <button type="button" class="color-picker__reset" id="new-session-color-clear">Clear</button>
+                                </div>
                             </div>
                         </div>
-                        <!-- Extra CLI flags (optional). Deliberately empty by
-                             default for every agent: Claude used to arrive with
-                             --dangerously-load-development-channels typed in for
-                             you, which read as something you had configured and
-                             had to be deleted by hand to opt out of. Type it
-                             here when you want it. -->
-                        <div class="dialog__field">
-                            <label class="dialog__label">Extra CLI flags (optional)</label>
-                            <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat">
-                        </div>
-                        <!-- Chat-log archive opt-out (chat sessions only; staged as an
-                             AGENT_CHAT_EXPORT_DIR= env override, see startSession) -->
-                        <div class="dialog__field">
-                            <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-                                <input type="checkbox" id="new-session-chatlog-archive" checked>
-                                <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
-                            </label>
-                        </div>
-                        <!-- Screenshots in the archive (chat sessions only; staged as
-                             AGENT_CHAT_EXPORT_ASSETS=none|small|original, see
-                             startSession). Disabled while archiving is off. -->
-                        <fieldset class="dialog__field" id="new-session-chatlog-assets" style="border:0; margin:0 0 0 24px; padding:0;">
-                            <legend class="dialog__label">Screenshots in the archive</legend>
-                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
-                                <input type="radio" name="chatlog-assets" value="none" checked>
-                                <span>Placeholders <small style="opacity:.7;">[image.png #1] text, no file</small></span>
-                            </label>
-                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
-                                <input type="radio" name="chatlog-assets" value="small">
-                                <span>Small <small style="opacity:.7;">downscaled to 1280px</small></span>
-                            </label>
-                            <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
-                                <input type="radio" name="chatlog-assets" value="original">
-                                <span>Original <small style="opacity:.7;">as pasted, full size</small></span>
-                            </label>
-                        </fieldset>
-                        <!-- Env vars for this session. Starts as the values
-                             saved on this device for the repo (masked, like the
-                             Session Settings pane); Edit reveals them. An edit
-                             applies to this session only unless the second
-                             option is picked. Hidden when the repo has no
-                             identity to save under (see syncEnvField). -->
-                        <div class="dialog__field dialog__field--hidden" id="new-session-env-field" style="margin-top:14px;">
-                            <label class="dialog__label" for="new-session-env-vars">Env vars</label>
-                            <div id="new-session-env-masked" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                                <span id="new-session-env-masked-text"></span>
-                                <button type="button" class="settings-env__btn" id="new-session-env-edit">Edit</button>
+                        <div class="adv-row" data-adv="flags">
+                            <div class="adv-row__head">
+                                <span class="adv-row__name">Extra CLI flags</span>
+                                <span class="adv-row__val" data-adv-val></span>
+                                <button type="button" class="settings-env__btn adv-row__toggle" aria-expanded="false" aria-label="Change Extra CLI flags">Change</button>
                             </div>
-                            <textarea class="dialog__input" id="new-session-env-vars" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="KEY=value, one per line" style="font-family:monospace; resize:vertical;" hidden></textarea>
-                            <fieldset id="new-session-env-scope" style="border:0; margin:8px 0 0; padding:0;" hidden>
-                                <legend class="dialog__label">Use these env vars for</legend>
-                                <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
-                                    <input type="radio" name="env-scope" value="once" checked>
-                                    <span>This session only</span>
+                            <div class="adv-row__body" hidden>
+                                <!-- Deliberately empty by default for every agent:
+                                     Claude used to arrive with
+                                     --dangerously-load-development-channels typed in
+                                     for you, which read as something you had
+                                     configured and had to be deleted by hand to opt
+                                     out of. Type it here when you want it. -->
+                                <input type="text" class="dialog__input" id="new-session-extra-args" placeholder="e.g. --channels server:agent-chat" aria-label="Extra CLI flags">
+                            </div>
+                        </div>
+                        <div class="adv-row" data-adv="chatlog">
+                            <div class="adv-row__head">
+                                <span class="adv-row__name">Chat log</span>
+                                <span class="adv-row__val" data-adv-val></span>
+                                <button type="button" class="settings-env__btn adv-row__toggle" aria-expanded="false" aria-label="Change Chat log">Change</button>
+                            </div>
+                            <div class="adv-row__body" hidden>
+                                <!-- Archive opt-out (chat sessions only; staged as an
+                                     AGENT_CHAT_EXPORT_DIR= env override, see startSession) -->
+                                <label class="dialog__label" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                                    <input type="checkbox" id="new-session-chatlog-archive" checked>
+                                    <span>Archive chat log into repo (<code>agent-chats/</code>)</span>
                                 </label>
-                                <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
-                                    <input type="radio" name="env-scope" value="save">
-                                    <span>This session and future sessions in this repo</span>
-                                </label>
-                            </fieldset>
+                                <!-- Screenshots in the archive (staged as
+                                     AGENT_CHAT_EXPORT_ASSETS=none|small|original, see
+                                     startSession). Disabled while archiving is off. -->
+                                <fieldset id="new-session-chatlog-assets" style="border:0; margin:8px 0 0 24px; padding:0;">
+                                    <legend class="dialog__label">Screenshots in the archive</legend>
+                                    <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                        <input type="radio" name="chatlog-assets" value="none" checked>
+                                        <span>Placeholders <small style="opacity:.7;">[image.png #1] text, no file</small></span>
+                                    </label>
+                                    <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                        <input type="radio" name="chatlog-assets" value="small">
+                                        <span>Small <small style="opacity:.7;">downscaled to 1280px</small></span>
+                                    </label>
+                                    <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                        <input type="radio" name="chatlog-assets" value="original">
+                                        <span>Original <small style="opacity:.7;">as pasted, full size</small></span>
+                                    </label>
+                                </fieldset>
+                            </div>
+                        </div>
+                        <!-- Env vars for this session. The row shows only a count
+                             of the values saved on this device for the repo;
+                             Change reveals them (same rule as the Session
+                             Settings pane). An edit applies to this session only
+                             unless the second option is picked. Hidden when the
+                             repo has no identity to save under (syncEnvField). -->
+                        <div class="adv-row dialog__field--hidden" data-adv="env" id="new-session-env-field">
+                            <div class="adv-row__head">
+                                <span class="adv-row__name">Env vars</span>
+                                <span class="adv-row__val" data-adv-val></span>
+                                <button type="button" class="settings-env__btn adv-row__toggle" aria-expanded="false" aria-label="Change Env vars">Change</button>
+                            </div>
+                            <div class="adv-row__body" hidden>
+                                <textarea class="dialog__input" id="new-session-env-vars" rows="4" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="KEY=value, one per line" aria-label="Env vars" style="font-family:monospace; resize:vertical;"></textarea>
+                                <fieldset id="new-session-env-scope" style="border:0; margin:8px 0 0; padding:0;">
+                                    <legend class="dialog__label">Use these env vars for</legend>
+                                    <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                        <input type="radio" name="env-scope" value="once" checked>
+                                        <span>This session only</span>
+                                    </label>
+                                    <label style="display:flex; align-items:baseline; gap:8px; cursor:pointer;">
+                                        <input type="radio" name="env-scope" value="save">
+                                        <span>This session and future sessions in this repo</span>
+                                    </label>
+                                </fieldset>
+                            </div>
                         </div>
                     </details>
                     <!-- Env file hint -->
