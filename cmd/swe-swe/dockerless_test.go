@@ -292,6 +292,7 @@ func TestWriteDockerlessHooks(t *testing.T) {
     "PreToolUse": [
       {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "old-guard"}]},
       {"matcher": "Artifact", "hooks": [{"type": "command", "command": "old-artifact-guard"}]},
+      {"matcher": "Artifact|mcp__claude_ai_.*", "hooks": [{"type": "command", "command": "/x/swe-swe-artifact-guard.sh"}]},
       {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-linter"}]}
     ],
     "Stop": [
@@ -343,8 +344,18 @@ func TestWriteDockerlessHooks(t *testing.T) {
 	joined := fmt.Sprint(pre2)
 	if !strings.Contains(joined, "my-linter") || !strings.Contains(joined, "swe-swe-ask-guard.sh") ||
 		!strings.Contains(joined, "swe-swe-artifact-guard.sh") ||
-		strings.Contains(joined, "old-guard") || strings.Contains(joined, "old-artifact-guard") {
+		strings.Contains(joined, "old-guard") || strings.Contains(joined, "old-artifact-guard") ||
+		strings.Contains(joined, "/x/swe-swe-artifact-guard.sh") {
 		t.Errorf("PreToolUse merge wrong: %s", joined)
+	}
+	foundMatcher := false
+	for _, e := range pre2 {
+		if e.(map[string]any)["matcher"] == artifactGuardMatcher {
+			foundMatcher = true
+		}
+	}
+	if !foundMatcher {
+		t.Errorf("artifact guard not wired with matcher %q: %v", artifactGuardMatcher, pre2)
 	}
 	stop := hooks["Stop"].([]any)
 	if len(stop) != 2 {

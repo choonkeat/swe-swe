@@ -245,7 +245,8 @@ echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 # the per-session knob; these files are static.
 #
 # Artifact guard (same shape, different reason): the built-in Artifact tool
-# publishes a page to claude.ai. A swe-swe session already has its own viewer,
+# and the claude.ai Docs MCP connector (mcp__claude_ai_Claude_Docs__*) both
+# publish to claude.ai. A swe-swe session already has its own viewer,
 # so the block spells out the local route instead: write the page to
 # mockups/, serve that dir on the session's $PORT, and hand the user a
 # http://localhost:$PORT/... link -- the chat UI intercepts localhost links and
@@ -354,15 +355,15 @@ ASKGUARDEOF
 chmod +x /home/app/.claude/hooks/swe-swe-ask-guard.sh
 cat > /home/app/.claude/hooks/swe-swe-artifact-guard.sh << 'ARTIFACTGUARDEOF'
 #!/bin/sh
-# swe-swe Artifact guard: the built-in Artifact tool publishes a page to
-# claude.ai -- an external surface the swe-swe user is not looking at. A
-# swe-swe session already has its own viewer: write the HTML into the
-# workspace, serve it on $PORT, and hand the user a localhost link, which the
-# chat UI intercepts and loads in the App Preview pane. Blocking here (exit 2
-# feeds stderr back to the agent) redirects it there instead of shipping
-# workspace content off-box. Sessions without an agent-chat channel (terminal
-# TUI, plain claude runs) are exempt, as is AGENT_CHAT_DISABLE=1 or
-# SWE_ALLOW_ARTIFACTS=1.
+# swe-swe Artifact guard: the built-in Artifact tool and the claude.ai Docs
+# MCP connector (mcp__claude_ai_Claude_Docs__*) publish pages to claude.ai --
+# an external surface the swe-swe user is not looking at. A swe-swe session
+# already has its own viewer: write the HTML into the workspace, serve it on
+# $PORT, and hand the user a localhost link, which the chat UI intercepts and
+# loads in the App Preview pane. Blocking here (exit 2 feeds stderr back to
+# the agent) redirects it there instead of shipping workspace content
+# off-box. Sessions without an agent-chat channel (terminal TUI, plain claude
+# runs) are exempt, as is AGENT_CHAT_DISABLE=1 or SWE_ALLOW_ARTIFACTS=1.
 [ "$AGENT_CHAT_DISABLE" = "1" ] && exit 0
 [ "$SWE_ALLOW_ARTIFACTS" = "1" ] && exit 0
 # Enforce only where this session actually has an agent-chat channel.
@@ -372,13 +373,13 @@ else
   [ -n "$AGENT_CHAT_PORT" ] || exit 0
 fi
 cat >&2 <<'GUARDEOF'
-BLOCKED: do not use the built-in Artifact tool -- it publishes to claude.ai, which is not this user's surface and sends workspace content off-box. This session has its own viewer. Instead:
+BLOCKED: do not publish to claude.ai -- not with the built-in Artifact tool, and not with the claude.ai Docs tools (mcp__claude_ai_Claude_Docs__*). claude.ai is not this user's surface, and publishing there sends workspace content off-box. This session has its own viewer. Instead:
 
 1. Write the page to `mockups/<name>.html` in the workspace (create `mockups/` if needed).
 2. Serve that directory on the session's $PORT with whatever static server suits the project (background it, or add a Procfile entry -- see /swe-swe:procfile).
 3. Give the user a clickable link in your send_message text: `http://localhost:$PORT/<name>.html` with $PORT substituted for the real number. The chat UI intercepts localhost links and opens them in the App Preview pane.
 
-To allow the built-in tool, set SWE_ALLOW_ARTIFACTS=1.
+To allow these tools, set SWE_ALLOW_ARTIFACTS=1.
 GUARDEOF
 exit 2
 ARTIFACTGUARDEOF
@@ -398,7 +399,7 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
         ]
       },
       {
-        "matcher": "Artifact",
+        "matcher": "Artifact|mcp__claude_ai_Claude_Docs__.*",
         "hooks": [
           {
             "type": "command",
@@ -422,11 +423,12 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 SETTINGSEOF
 if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
   # Merge idempotently into existing settings: drop any prior AskUserQuestion
-  # or Artifact matcher and any prior swe-swe-stop-guard Stop entry, append
-  # ours, preserve every other key and hook entry.
+  # matcher, any prior artifact-guard entry (matched by command, so an old or
+  # hand-widened matcher is replaced too) and any prior swe-swe-stop-guard
+  # Stop entry, append ours, preserve every other key and hook entry.
   TMP_SETTINGS=$(mktemp)
   if jq --slurpfile add /tmp/swe-claude-settings.json \
-       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and .matcher != "Artifact"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and (((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-artifact-guard") | not)))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
        "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
     mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
   else

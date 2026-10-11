@@ -112,7 +112,8 @@ echo -e "${GREEN}[ok] Created Claude MCP configuration${NC}"
 # the per-session knob; these files are static.
 #
 # Artifact guard (same shape, different reason): the built-in Artifact tool
-# publishes a page to claude.ai. A swe-swe session already has its own viewer,
+# and the claude.ai Docs MCP connector (mcp__claude_ai_Claude_Docs__*) both
+# publish to claude.ai. A swe-swe session already has its own viewer,
 # so the block spells out the local route instead: write the page to
 # mockups/, serve that dir on the session's $PORT, and hand the user a
 # http://localhost:$PORT/... link -- the chat UI intercepts localhost links and
@@ -156,7 +157,7 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
         ]
       },
       {
-        "matcher": "Artifact",
+        "matcher": "Artifact|mcp__claude_ai_Claude_Docs__.*",
         "hooks": [
           {
             "type": "command",
@@ -180,11 +181,12 @@ cat > /tmp/swe-claude-settings.json << 'SETTINGSEOF'
 SETTINGSEOF
 if [ -s "$CLAUDE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
   # Merge idempotently into existing settings: drop any prior AskUserQuestion
-  # or Artifact matcher and any prior swe-swe-stop-guard Stop entry, append
-  # ours, preserve every other key and hook entry.
+  # matcher, any prior artifact-guard entry (matched by command, so an old or
+  # hand-widened matcher is replaced too) and any prior swe-swe-stop-guard
+  # Stop entry, append ours, preserve every other key and hook entry.
   TMP_SETTINGS=$(mktemp)
   if jq --slurpfile add /tmp/swe-claude-settings.json \
-       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and .matcher != "Artifact"))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
+       '.hooks.PreToolUse = (((.hooks.PreToolUse // []) | map(select(.matcher != "AskUserQuestion" and (((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-artifact-guard") | not)))) + ($add[0].hooks.PreToolUse)) | .hooks.Stop = (((.hooks.Stop // []) | map(select(((.hooks // []) | map(.command // "") | join(" ")) | contains("swe-swe-stop-guard") | not))) + ($add[0].hooks.Stop))' \
        "$CLAUDE_SETTINGS" > "$TMP_SETTINGS" 2>/dev/null; then
     mv "$TMP_SETTINGS" "$CLAUDE_SETTINGS"
   else

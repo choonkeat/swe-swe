@@ -419,6 +419,12 @@ func dockerlessPort(getenv func(string) string) string {
 // re-appended; every other key and hook entry is preserved. The guard scripts
 // self-exempt sessions without an agent-chat channel, so host TUI runs are
 // unaffected even though the hooks are installed.
+// artifactGuardMatcher is every tool that publishes to claude.ai: the built-in
+// Artifact tool (plus ArtifactComments/ArtifactData) and the claude.ai Docs
+// MCP connector, whose tools are named mcp__claude_ai_Claude_Docs__<verb>.
+// Keep in sync with the matcher in templates/host/entrypoint.sh.
+const artifactGuardMatcher = "Artifact|mcp__claude_ai_Claude_Docs__.*"
+
 func writeDockerlessHooks(projectDir, sweDir string) error {
 	hooksDir := filepath.Join(sweDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
@@ -471,9 +477,11 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 	}
 	pre, _ := hooks["PreToolUse"].([]any)
 	pre = keep(pre, func(m map[string]any) bool {
-		return m["matcher"] == "AskUserQuestion" || m["matcher"] == "Artifact"
+		return m["matcher"] == "AskUserQuestion" || m["matcher"] == "Artifact" ||
+			m["matcher"] == artifactGuardMatcher ||
+			strings.Contains(fmt.Sprint(m["hooks"]), "swe-swe-artifact-guard")
 	})
-	hooks["PreToolUse"] = append(pre, cmdEntry("AskUserQuestion", askPath), cmdEntry("Artifact", artifactPath))
+	hooks["PreToolUse"] = append(pre, cmdEntry("AskUserQuestion", askPath), cmdEntry(artifactGuardMatcher, artifactPath))
 	stop, _ := hooks["Stop"].([]any)
 	stop = keep(stop, func(m map[string]any) bool {
 		return strings.Contains(fmt.Sprint(m["hooks"]), "swe-swe-stop-guard")
