@@ -223,6 +223,72 @@ test.describe('per-repo environment variables UI', () => {
     }, marker, { timeout: 30_000 });
   });
 
+  // One-off env vars (New Session dialog, "This session only") in a REAL
+  // session. Two things must hold: the spawned process gets them, and the
+  // session page's automatic re-send of the SAVED blob (set_env with
+  // auto:true) does not replace them in the server store -- that store is what
+  // an agent restart and child sessions read. The store is observed the way
+  // the product reports it: env_count in the state the server sends on every
+  // (re)connect. A session started WITHOUT env_once is the control: there the
+  // same re-send does replace the store, so the check can fail.
+  test('one-off env vars reach the process and survive the automatic re-send of saved ones', async ({ page }) => {
+    await openSession(page);
+
+    const marker = 'ONCEOK' + crypto.randomUUID().slice(0, 8).replace(/-/g, '');
+    const savedBlob = 'SAVED_A=1\nSAVED_B=2\n';
+    const start = async (form) => {
+      const resp = await page.request.post('/api/session/new', {
+        form: { assistant: 'shell', session: 'terminal', ...form },
+        maxRedirects: 0,
+      });
+      const loc = resp.headers()['location'];
+      expect(loc, `no redirect from /api/session/new (status ${resp.status()})`).toBeTruthy();
+      await page.goto(loc);
+      await page.locator('.terminal-ui__terminal').waitFor({ timeout: 30_000 });
+      await waitForUi(page, () => window.terminalUI && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+    };
+    const serverEnvCount = async () => {
+      await page.reload();
+      await waitForUi(page, () => window.terminalUI && typeof window.terminalUI._envCount === 'number'
+        && window.terminalUI.ws && window.terminalUI.ws.readyState === 1);
+      return page.evaluate(() => window.terminalUI._envCount);
+    };
+    const autoResend = async () => {
+      await page.evaluate((raw) => {
+        window.terminalUI.sendJSON({ type: 'set_env', data: { raw, auto: true } });
+      }, savedBlob);
+      // No ack is sent for an ignored re-send, so give the frame time to land.
+      await page.waitForTimeout(1000);
+    };
+
+    // One-off session: the process has the one-off var and not the saved ones.
+    await start({ env: `ONCE_VAR=${marker}\n`, env_once: '1' });
+    await page.evaluate(() => {
+      const enc = new TextEncoder();
+      window.terminalUI.ws.send(enc.encode("printf 'RESULT=[%s][%s]\\n' \"$ONCE_VAR\" \"$SAVED_A\"\n"));
+    });
+    await page.waitForFunction((m) => {
+      const term = window.terminalUI?.term;
+      if (!term) return false;
+      const buf = term.buffer.active;
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (line && line.translateToString().includes('RESULT=[' + m + '][]')) return true;
+      }
+      return false;
+    }, marker, { timeout: 30_000 });
+
+    expect(await serverEnvCount()).toBe(1);
+    await autoResend();
+    expect(await serverEnvCount()).toBe(1);
+
+    // Control: an ordinary session takes the re-send.
+    await start({ env: 'PLAIN=1\n' });
+    expect(await serverEnvCount()).toBe(1);
+    await autoResend();
+    expect(await serverEnvCount()).toBe(2);
+  });
+
   test('forget on this device clears the stored blob and the server copy', async ({ page }) => {
     await openSession(page);
     const key = await envLocalKey(page);
