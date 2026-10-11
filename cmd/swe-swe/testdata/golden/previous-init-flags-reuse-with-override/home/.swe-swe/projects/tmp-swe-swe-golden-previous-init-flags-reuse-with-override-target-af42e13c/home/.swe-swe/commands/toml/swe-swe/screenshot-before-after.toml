@@ -27,9 +27,11 @@ on `http://localhost:$PORT`.
 
 ### 2. Stitch one image per screen
 
-Write to `.swe-swe/screenshots/before-after/<screen-slug>.png` (or the path the
-project already uses for test evidence, if it has one). Layout is three panels
-side by side, each labelled: **BEFORE | AFTER | DIFF**.
+Write to `/tmp/swe-swe-before-after/<YYYYMMDD-HHMMSS>/<screen-slug>.png` -- one
+timestamped folder per run, so runs never overwrite each other. These images are
+throwaway: `/tmp` is wiped when the container is rebuilt, and the chat keeps its
+own copy of every image it shows. Layout is three panels side by side, each
+labelled: **BEFORE | AFTER | DIFF**.
 
 The DIFF panel is a real pixel comparison -- changed pixels highlighted,
 unchanged greyed out. **Pad to equal height rather than rescaling**; a rescale
@@ -105,6 +107,8 @@ agent-chat session, pass the paths in `send_message`'s `image_urls`).
 
 - Do not assert on file size, exit codes, or test names -- assert on the pixels.
 - Do not rescale, crop, or auto-level; the diff must be honest.
-- Do not commit anything unless asked. If asked, stage the images by explicit
-  path (`git add <path>` -- never `git add -A`).
+- Do not commit anything unless asked. If asked, first copy the images out of
+  `/tmp` into the repo (where the user says, or next to the change's task/plan
+  doc), then stage them by explicit path (`git add <path>` -- never
+  `git add -A`).
 """
