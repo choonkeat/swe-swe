@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v2.43.1 - Fresh Node
+
+### Fixes
+
+- **Existing images upgrade Node.js on every swe-swe upgrade**, picking up the October 2026 TLS and eMudhra fixes (Node 24.22.1) without a full rebuild.
+
 ## v2.43.0 - Env Vars Up Front
 
 ### Features
