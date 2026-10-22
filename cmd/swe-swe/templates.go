@@ -161,6 +161,10 @@ func processDockerfileTemplate(content string, agents []string, aptPackages, npm
 		if strings.Contains(line, "{{GID}}") {
 			line = strings.ReplaceAll(line, "{{GID}}", fmt.Sprintf("%d", hostGID))
 		}
+		// The CLI version keys the CA-refresh layer, so every upgrade re-runs it.
+		if strings.Contains(line, "{{SWE_SWE_VERSION}}") {
+			line = strings.ReplaceAll(line, "{{SWE_SWE_VERSION}}", Version)
+		}
 
 		if !skip {
 			result = append(result, line)

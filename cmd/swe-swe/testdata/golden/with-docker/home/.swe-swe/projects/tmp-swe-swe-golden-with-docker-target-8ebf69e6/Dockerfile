@@ -258,6 +258,15 @@ RUN printf '%s\n' \
     '    set +a' \
     'fi' > /etc/profile.d/zz-swe-swe-env.sh
 
+# Refresh the CA bundle on every swe-swe version. The apt-get layer near the
+# top stays cached across ordinary rebuilds, so without this an existing image
+# keeps trusting roots Debian has since distrusted (2026-10: eMudhra).
+# Changing SWE_SWE_VERSION re-runs only this cheap step.
+ARG SWE_SWE_VERSION=dev
+RUN echo "swe-swe ${SWE_SWE_VERSION}: refreshing ca-certificates" && \
+    apt-get update && apt-get install -y --only-upgrade ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 # Entrypoint runs as root to configure Docker socket permissions,
 # then switches to app user to run swe-swe-server
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
