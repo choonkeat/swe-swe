@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## v2.43.0 - Env Vars Up Front
+
+### Features
+
+- **Edit env vars when you start a session**: New Session shows the repo's saved env vars and lets you change them for that session only, or save them for future sessions too.
+- **Tidier "Appearance & advanced" in New Session**: each setting is one short row with its current value and a Change button.
+
+### Fixes
+
+- **Existing images pick up updated trusted certificates** on every swe-swe upgrade, without a full rebuild.
+- **The artifact guard also covers the claude.ai Docs tools**, so a session cannot publish to claude.ai through them unnoticed.
+- **Before/after screenshots are saved to /tmp** instead of `.swe-swe/`.
+
 ## v2.42.0 - A Face in the Tab
 
 ### Features
