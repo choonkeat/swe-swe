@@ -219,6 +219,7 @@ RUN echo "swe-swe ${SWE_SWE_VERSION}: refreshing ca-certificates" && \
     apt-get update && apt-get install -y --only-upgrade ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+
 # Run as non-root user (entrypoint handles setup without privilege escalation)
 USER app
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

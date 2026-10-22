@@ -230,6 +230,14 @@ RUN echo "swe-swe ${SWE_SWE_VERSION}: refreshing ca-certificates" && \
     apt-get update && apt-get install -y --only-upgrade ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
+# Same for Node.js: its install layer is cached too, and Node carries its own
+# CA list, so the bundle refresh above does not cover it (2026-10: eMudhra +
+# TLS hostname-check fixes in 24.22.1). Upgrades within the installed major.
+RUN echo "swe-swe ${SWE_SWE_VERSION}: refreshing nodejs" && \
+    apt-get update && apt-get install -y --only-upgrade nodejs && \
+    rm -rf /var/lib/apt/lists/* && \
+    node --version
+
 # Run as non-root user (entrypoint handles setup without privilege escalation)
 USER app
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
