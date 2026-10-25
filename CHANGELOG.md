@@ -1,5 +1,12 @@
 # CHANGELOG
 
+## v2.43.2 - Locked Doors
+
+### Fixes
+
+- **The login redirect no longer trusts forwarded host headers**, so a crafted request cannot bounce you to another site.
+- **Session names can no longer run code on the chat playback page**: the name is escaped there, and new session names may not contain `<` or `>`.
+
 ## v2.43.1 - Fresh Node
 
 ### Fixes
