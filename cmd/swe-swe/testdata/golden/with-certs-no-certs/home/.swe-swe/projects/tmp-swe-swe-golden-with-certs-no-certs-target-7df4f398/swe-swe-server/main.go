@@ -5535,6 +5535,10 @@ func pendingSessionSweeper() {
 // session. The WS handler translates this into a "session_gone" client message.
 var errSessionGone = errors.New("session gone")
 
+// errInvalidSessionName: a new session's name may not contain < or >.
+// Names are shown on HTML pages; this blocks planting markup (CTF #5).
+var errInvalidSessionName = errors.New("invalid session name: < and > are not allowed")
+
 // getOrCreateSession returns an existing session, or creates a new one when
 // allowCreate is true. When allowCreate is false and no live session exists for
 // p.UUID, it returns errSessionGone WITHOUT creating anything. The live-check
@@ -5542,6 +5546,9 @@ var errSessionGone = errors.New("session gone")
 // concurrent WS connect (e.g. after consuming the staged intent) cannot race
 // between "is it live?" and "insert it" and spuriously see the session as gone.
 func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, error) {
+	if strings.ContainsAny(p.Name, "<>") {
+		return nil, false, errInvalidSessionName
+	}
 	// Memory guard: check before acquiring lock (avoid deadlock with getMaxSessionRSS)
 	if p.ParentUUID == "" { // only guard top-level sessions, not child sessions
 		if err := checkMemoryForNewSession(); err != nil {
@@ -8107,6 +8114,8 @@ func handleChatPlaybackPage(w http.ResponseWriter, r *http.Request, parentUUID s
 			title = meta.Name + " -- Chat"
 		}
 	}
+	// The name is user/agent supplied: escape it so it is shown, never run (CTF #5).
+	title = template.HTMLEscapeString(title)
 
 	eventsURL := "/recording/" + parentUUID + "/chat.events.jsonl"
 

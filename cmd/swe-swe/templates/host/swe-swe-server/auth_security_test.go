@@ -1,10 +1,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -259,5 +261,42 @@ func TestVerifyRedirectIgnoresForwardedHost(t *testing.T) {
 	}
 	if strings.Contains(loc, "evil.example") {
 		t.Errorf("Location %q leaks the forged host", loc)
+	}
+}
+
+// --- #5: session name must never run as code on the chat playback page ---
+
+func TestChatPlaybackEscapesSessionName(t *testing.T) {
+	orig := recordingsDir
+	recordingsDir = t.TempDir()
+	t.Cleanup(func() { recordingsDir = orig })
+
+	id := "11111111-2222-3333-4444-555555555555"
+	evil := `</title><script>alert(1)</script>`
+	meta := fmt.Sprintf(`{"name":%q}`, evil)
+	if err := os.WriteFile(recordingsDir+"/session-"+id+".metadata.json", []byte(meta), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(recordingsDir+"/session-"+id+"-x.events.jsonl", nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	handleChatPlaybackPage(rec, httptest.NewRequest("GET", "/recording/"+id+"/chat", nil), id)
+
+	body := rec.Body.String()
+	if strings.Contains(body, "<script>alert(1)</script>") {
+		t.Errorf("session name was written into the page unescaped")
+	}
+	if !strings.Contains(body, "&lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Errorf("escaped session name missing from page title")
+	}
+}
+
+func TestCreateSessionRejectsAngleBracketName(t *testing.T) {
+	swapSessions(t, map[string]*Session{})
+	_, _, err := getOrCreateSession(SessionParams{UUID: "xss-name", ParentUUID: "p", Name: `<img src=x onerror=alert(1)>`}, true)
+	if !errors.Is(err, errInvalidSessionName) {
+		t.Fatalf("err = %v, want errInvalidSessionName", err)
 	}
 }
