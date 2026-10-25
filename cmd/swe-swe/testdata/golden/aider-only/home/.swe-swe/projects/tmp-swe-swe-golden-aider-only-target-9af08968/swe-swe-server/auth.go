@@ -667,22 +667,15 @@ func authVerifyHandler(secret string) http.HandlerFunc {
 			}
 		}
 		if err != nil {
-			// Build redirect URL using forwarded headers (Traefik sends these)
+			// Relative Location: the browser resolves it against the address it
+			// already used. Never build a host from X-Forwarded-Host / Host --
+			// both are request-controlled (open redirect, CTF #6).
 			redirectURI := r.Header.Get("X-Forwarded-Uri")
 			if redirectURI == "" {
 				redirectURI = "/"
 			}
-			scheme := r.Header.Get("X-Forwarded-Proto")
-			if scheme == "" {
-				scheme = "http"
-			}
-			host := r.Header.Get("X-Forwarded-Host")
-			if host == "" {
-				host = r.Host
-			}
 			loginPath := "/swe-swe-auth/login?redirect=" + url.QueryEscape(redirectURI)
-			loginURL := scheme + "://" + host + loginPath
-			w.Header().Set("Location", loginURL)
+			w.Header().Set("Location", loginPath)
 			w.WriteHeader(http.StatusFound)
 			return
 		}

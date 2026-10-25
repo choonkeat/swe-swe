@@ -234,3 +234,30 @@ func TestLoginKeepsLocalRedirect(t *testing.T) {
 		t.Errorf("Location = %q, want %q (local redirect must be preserved)", loc, "/session/abc")
 	}
 }
+
+// --- #6: verify redirect must not trust X-Forwarded-Host / Host ---
+
+// An unauthenticated /swe-swe-auth/verify must answer with a same-site
+// path, never a full address built from request headers an attacker controls.
+func TestVerifyRedirectIgnoresForwardedHost(t *testing.T) {
+	req := httptest.NewRequest("GET", "/swe-swe-auth/verify", nil)
+	req.Host = "evil.example"
+	req.Header.Set("X-Forwarded-Host", "evil.example")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Uri", "/session/abc")
+	rec := httptest.NewRecorder()
+
+	authVerifyHandler("open-sesame")(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, want 302", rec.Code)
+	}
+	loc := rec.Header().Get("Location")
+	want := "/swe-swe-auth/login?redirect=%2Fsession%2Fabc"
+	if loc != want {
+		t.Errorf("Location = %q, want %q", loc, want)
+	}
+	if strings.Contains(loc, "evil.example") {
+		t.Errorf("Location %q leaks the forged host", loc)
+	}
+}
