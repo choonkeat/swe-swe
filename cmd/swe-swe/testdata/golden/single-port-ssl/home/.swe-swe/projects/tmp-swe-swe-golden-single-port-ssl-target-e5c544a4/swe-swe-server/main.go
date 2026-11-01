@@ -10743,7 +10743,7 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 	}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send_chat_message",
-		Description: "Send a message to a session's agent chat (as if a user sent it from the browser). The server appends '(via send_chat_message from <unique>/<uuid>)' naming YOUR session, so the receiver can reply by calling send_chat_message with that address.",
+		Description: "Send a message to a session's agent chat. The server stamps it with YOUR session's name and address, so the receiver sees who wrote it and can reply by calling send_chat_message with that address. Your text arrives unchanged; nothing is appended to it.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args sendChatArgs) (*mcp.CallToolResult, any, error) {
 		targetUUID, err := resolveLocalSession(args.UUID)
 		if err != nil {
@@ -10758,10 +10758,9 @@ func registerOrchestrationTools(server *mcp.Server) (err error) {
 		if sess.AgentChatPort == 0 {
 			return nil, nil, fmt.Errorf("session has no agent chat (terminal-only session)")
 		}
-		// Server-stamped signoff: the receiving agent learns which session to
+		// Server-stamped sender: the receiving agent learns which session to
 		// reply to, from the caller's auth-key identity rather than agent text.
-		text := args.Text + chatSignoff("send_chat_message", callerSessionFromContext(ctx))
-		result, err := pushChatMessage(sess.AgentChatPort, map[string]string{"text": text})
+		result, err := pushChatMessageFrom(sess.AgentChatPort, args.Text, callerSessionFromContext(ctx))
 		if err != nil {
 			return nil, nil, fmt.Errorf("agent chat error: %w", err)
 		}
