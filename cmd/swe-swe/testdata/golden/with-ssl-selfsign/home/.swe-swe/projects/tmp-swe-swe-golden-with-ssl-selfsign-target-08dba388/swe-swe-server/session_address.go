@@ -97,3 +97,31 @@ func chatSignoff(tool, callerUUID string) string {
 	}
 	return "\n\n(via " + tool + " from " + sessionAddress(callerUUID) + ")"
 }
+
+// pushChatMessageFrom sends text to a session's agent-chat as a message from
+// callerUUID's session. The sender goes as from_name / from_session fields,
+// so the text arrives as written and the receiver's chat can show who sent it.
+// An unknown caller is sent unstamped.
+//
+// An agent-chat that predates those fields rejects the call before delivering
+// anything; that exact rejection is retried once with the old text signoff.
+func pushChatMessageFrom(port int, text, callerUUID string) (string, error) {
+	if callerUUID == "" {
+		return pushChatMessage(port, map[string]string{"text": text})
+	}
+	addr := sessionAddress(callerUUID)
+	name := ""
+	sessionsMu.RLock()
+	if s, ok := sessions[callerUUID]; ok {
+		name = s.Name
+	}
+	sessionsMu.RUnlock()
+	if name == "" {
+		name = addr
+	}
+	out, err := pushChatMessage(port, map[string]string{"text": text, "from_name": name, "from_session": addr})
+	if err != nil && strings.Contains(err.Error(), "unexpected additional properties") {
+		return pushChatMessage(port, map[string]string{"text": text + chatSignoff("send_chat_message", callerUUID)})
+	}
+	return out, err
+}

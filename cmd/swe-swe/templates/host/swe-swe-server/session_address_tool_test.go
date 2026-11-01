@@ -76,10 +76,10 @@ func (e *toolError) Error() string { return e.msg }
 func TestSendChatMessageIsServerStampedWithSenderAddress(t *testing.T) {
 	withLocalUnique(t, "here")
 	fakeChatSession(t, "recv-1")
-	var delivered string
+	var delivered map[string]string
 	swapOrchestrator(t, func(_ int, tool string, args any) (string, error) {
 		if tool == "send_chat_message" {
-			delivered = args.(map[string]string)["text"]
+			delivered = args.(map[string]string)
 		}
 		return `{"ok":true}`, nil
 	})
@@ -89,18 +89,17 @@ func TestSendChatMessageIsServerStampedWithSenderAddress(t *testing.T) {
 	if _, err := callToolText(t, cs, "send_chat_message", map[string]any{"uuid": "here/recv-1", "text": "hello"}); err != nil {
 		t.Fatalf("send_chat_message: %v", err)
 	}
-	want := "hello\n\n(via send_chat_message from here/sender-1)"
-	if delivered != want {
-		t.Fatalf("delivered %q, want %q", delivered, want)
+	if delivered["text"] != "hello" || delivered["from_session"] != "here/sender-1" {
+		t.Fatalf("delivered %v, want text unchanged and from_session here/sender-1", delivered)
 	}
 
 	// Bare uuid keeps meaning this box.
-	delivered = ""
+	delivered = nil
 	if _, err := callToolText(t, cs, "send_chat_message", map[string]any{"uuid": "recv-1", "text": "again"}); err != nil {
 		t.Fatalf("send_chat_message bare uuid: %v", err)
 	}
-	if !strings.HasSuffix(delivered, "(via send_chat_message from here/sender-1)") {
-		t.Fatalf("bare-uuid delivery missing signoff: %q", delivered)
+	if delivered["from_session"] != "here/sender-1" {
+		t.Fatalf("bare-uuid delivery missing sender: %v", delivered)
 	}
 }
 
