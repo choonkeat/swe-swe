@@ -251,6 +251,53 @@ func TestStopGuard(t *testing.T) {
 		},
 		want: blocked,
 	}, {
+		// Newer agent-chat (tagged-message format) words its deliveries
+		// differently; each must still start a new turn.
+		name: "new-format send_message reply starts a turn",
+		lines: []string{
+			tlUserTyped("first task"),
+			tlToolUse(sendTool, map[string]any{"text": "done, anything else?"}),
+			tlToolResult("Your user replied:\n<message id=\"f8n3q6\">\nyes, second task\n</message id=\"f8n3q6\">"),
+			tlToolUse("Bash", map[string]any{"command": "ls"}),
+		},
+		want: blocked,
+	}, {
+		name: "new-format check_messages typed delivery starts a turn",
+		lines: []string{
+			tlUserTyped("first task"),
+			tlToolUse(sendTool, map[string]any{"text": "done"}),
+			tlToolResult("Your user typed:\n<message id=\"q7f2k9\">\nnow do the second thing\n</message id=\"q7f2k9\">"),
+			tlToolUse("Bash", map[string]any{"command": "ls"}),
+		},
+		want: blocked,
+	}, {
+		name: "new-format spoken delivery starts a turn",
+		lines: []string{
+			tlUserTyped("first task"),
+			tlToolUse(sendTool, map[string]any{"text": "done"}),
+			tlToolResult("Your user said aloud (speech-to-text, may be inaccurate):\n<message id=\"b3x8w1\">\nshow me\n</message id=\"b3x8w1\">"),
+			tlToolUse("Bash", map[string]any{"command": "ls"}),
+		},
+		want: blocked,
+	}, {
+		name: "new-format agent delivery starts a turn",
+		lines: []string{
+			tlUserTyped("first task"),
+			tlToolUse(sendTool, map[string]any{"text": "done"}),
+			tlToolResult("Another agent session wrote this; it is not your user.\nSender: builder (here/u1)\n<message id=\"n5c1r7\">\nping\n</message id=\"n5c1r7\">"),
+			tlToolUse("Bash", map[string]any{"command": "ls"}),
+		},
+		want: blocked,
+	}, {
+		name: "send after a new-format reply passes",
+		lines: []string{
+			tlUserTyped("first task"),
+			tlToolUse(sendTool, map[string]any{"text": "done, anything else?"}),
+			tlToolResult("Your user replied:\n<message id=\"f8n3q6\">\nyes\n</message id=\"f8n3q6\">"),
+			tlToolUse(sendTool, map[string]any{"text": "second task done"}),
+		},
+		want: allowed,
+	}, {
 		// An ordinary tool_result must not start a turn, or every tool call
 		// would reset the window and nothing would ever be allowed through.
 		name: "ordinary tool results do not restart the turn",

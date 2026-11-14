@@ -335,11 +335,14 @@ tp=$(printf '%s' "$input" | jq -r '.transcript_path // empty')
 [ -n "$tp" ] && [ -f "$tp" ] || exit 0
 # Slice the transcript from the last GENUINE user message. A typed message is
 # a type:user line that is not a tool_result. An agent-chat reply arrives as a
-# tool_result carrying "User said:"/"User responded:" and also starts a turn --
-# without that anchor, back-to-back chat replies share one turn start and an
-# earlier send covers the newer turn.
+# tool_result carrying "User said:"/"User responded:" (agent-chat <= 0.18) or
+# "Your user typed:"/"Your user said aloud"/"Your user replied:"/"Another
+# agent session wrote this" (the tagged-message format) and also starts a
+# turn -- without that anchor, back-to-back chat replies share one turn start
+# and an earlier send covers the newer turn. Both wordings stay matched, so
+# this works with whichever agent-chat npx resolves.
 n=$(awk '/"type":"user"/ {
-  if (!/"tool_result"/ || /User said:|User responded:/) last = NR
+  if (!/"tool_result"/ || /User said:|User responded:|Your user typed:|Your user said aloud|Your user replied:|Another agent session wrote this/) last = NR
 } END { if (last) print last }' "$tp")
 [ -n "$n" ] || exit 0
 turn=$(tail -n +"$n" "$tp")
