@@ -183,17 +183,17 @@ func TestWriteDockerlessOpenShim(t *testing.T) {
 	}
 }
 
-// init --dockerless writes a project-scoped .mcp.json with the five swe-swe
-// MCP servers, preserving the `sh -c` form so session env vars expand at
-// launch.
+// Host init/up writes Claude's MCP config (passed as --mcp-config at launch)
+// with the swe-swe MCP servers, preserving the `sh -c` form so session env
+// vars expand at launch.
 func TestWriteDockerlessMCPConfig(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"}); err != nil {
-		t.Fatalf("writeDockerlessAgentMCPConfigs: %v", err)
+	if _, err := writeHostAgentConfig(dir, []string{"claude"}, false); err != nil {
+		t.Fatalf("writeHostAgentConfig: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	data, err := os.ReadFile(filepath.Join(hostAgentConfigDir(dir), hostClaudeMCPFile))
 	if err != nil {
-		t.Fatalf("read .mcp.json: %v", err)
+		t.Fatalf("read claude MCP config: %v", err)
 	}
 	var doc struct {
 		MCPServers map[string]mcpStdioSpec `json:"mcpServers"`
@@ -243,6 +243,18 @@ func TestDockerlessServerInvocationTunnel(t *testing.T) {
 	if argsContainValue(args, "-tunnel-local-ports") {
 		t.Errorf("args %v must not contain -tunnel-local-ports (server has no such flag)", args)
 	}
+}
+
+// The server copies swe-swe's project-scoped agent wiring into every new
+// project / clone only when it knows it runs host-native.
+func TestDockerlessServerInvocationSetsHostRuntime(t *testing.T) {
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false)
+	for _, e := range env {
+		if e == "SWE_RUNTIME=host" {
+			return
+		}
+	}
+	t.Errorf("env %v missing SWE_RUNTIME=host", env)
 }
 
 func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
@@ -450,8 +462,8 @@ func TestRemoveDockerlessMCPConfig(t *testing.T) {
 		t.Errorf("absent file: removed=%v err=%v, want false,nil", removed, err)
 	}
 
-	// Ours only: deleted.
-	if _, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"claude"}); err != nil {
+	// Ours only (what older host inits wrote): deleted.
+	if err := os.WriteFile(path, []byte(mcpStdioJSON()), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if removed, err := removeClaudeMCPConfigForTest(dir); err != nil || !removed {

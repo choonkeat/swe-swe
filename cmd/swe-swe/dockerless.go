@@ -106,41 +106,19 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 		log.Fatalf("Failed to write swe-swe-open shim: %v", err)
 	}
 
-	// Project-scoped MCP config (option ii): no global config pollution.
-	// Each selected agent gets the form it actually reads -- Claude a
-	// .mcp.json, OpenCode an opencode.json, Gemini a .gemini/settings.json,
-	// Pi a project extension, Codex a launch wrapper (it has no
-	// project-scoped config file and its ~/.codex/config.toml is the user's).
-	// MCP-less mode writes none (and retires any a previous init wrote):
-	// the server runs the proxy fleet and the agent uses the `mcp` CLI.
+	// Agent config (MCP servers + Claude hook guards) goes into
+	// sweDir/agent-config, never into the project: the server passes it to
+	// each agent at launch, so new projects, clones and worktrees are covered
+	// too (see host_agent_config.go). `swe-swe up` rebuilds it every boot.
+	if err := setUpHostAgentConfig(sweDir, absPath, config.Agents, config.WithoutMCP); err != nil {
+		log.Fatalf("Failed to set up agent config: %v", err)
+	}
 	if config.WithoutMCP {
-		removed, err := removeDockerlessAgentMCPConfigs(absPath, binDir, config.Agents)
-		if err != nil {
-			log.Fatalf("Failed to remove MCP config: %v", err)
-		}
-		for _, path := range removed {
-			fmt.Printf("Removed MCP config %s (MCP-less mode)\n", path)
-		}
 		fmt.Println("MCP-less mode: no agent MCP config; the agent reaches tools through the `mcp` CLI")
-	} else {
-		written, err := writeDockerlessAgentMCPConfigs(absPath, binDir, config.Agents)
-		if err != nil {
-			log.Fatalf("Failed to write MCP config: %v", err)
-		}
-		for _, path := range written {
-			fmt.Printf("Wrote MCP config to %s\n", path)
-		}
-		if unsupported := agentsWithoutHostMCPConfig(config.Agents); len(unsupported) > 0 {
-			fmt.Printf("No host-side MCP config for %s (no project-scoped config format); it reaches tools through the `mcp` CLI if you re-init with --without-mcp\n", strings.Join(unsupported, ", "))
-		}
+	} else if unsupported := agentsWithoutHostMCPConfig(config.Agents); len(unsupported) > 0 {
+		fmt.Printf("No host-side MCP config for %s (no per-launch config option); it reaches tools through the `mcp` CLI if you re-init with --without-mcp\n", strings.Join(unsupported, ", "))
 	}
-
-	// Claude hook guards (AskUserQuestion + silent-stop), project-scoped so
-	// the host user's global ~/.claude is never touched.
-	if err := writeDockerlessHooks(absPath, sweDir); err != nil {
-		log.Fatalf("Failed to write Claude hook guards: %v", err)
-	}
-	fmt.Printf("Wrote Claude hook guards to %s\n", filepath.Join(absPath, ".claude", "settings.local.json"))
+	fmt.Printf("Wrote agent config (MCP servers, Claude hook guards) to %s\n", hostAgentConfigDir(sweDir))
 
 	if err := writeDockerlessMarker(sweDir); err != nil {
 		log.Fatalf("Failed to write dockerless marker: %v", err)
@@ -226,6 +204,10 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 	// SWE_SERVER_PORT; the server passes it through to sessions. In the
 	// container the entrypoint exports it; here `swe-swe up` does.
 	env = append(env, "SWE_SERVER_PORT="+port)
+	// SWE_RUNTIME=host tells the server its agent wiring is project-scoped
+	// (.mcp.json etc., never ~/.claude.json), so every workspace it prepares
+	// (new project, clone) needs that wiring copied in from this one.
+	env = append(env, "SWE_RUNTIME=host")
 	if mcpLess {
 		env = append(env, "SWE_MCP_LESS=1")
 	}
@@ -351,6 +333,14 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 		} else if n > 0 {
 			fmt.Printf("Updated %d host-native binaries in %s to this swe-swe's versions\n", n, filepath.Dir(bin))
 		}
+		// Rebuild the agent config every boot: it follows this swe-swe's MCP
+		// server list, and moves an older init's project files out of the
+		// project (see host_agent_config.go).
+		if cfg, err := loadInitConfig(sweDir); err != nil {
+			log.Printf("Warning: could not read init config; agent config not refreshed: %v", err)
+		} else if err := setUpHostAgentConfig(sweDir, absPath, cfg.Agents, cfg.WithoutMCP); err != nil {
+			log.Printf("Warning: %v", err)
+		}
 		if _, err := os.Stat(bin); err != nil {
 			log.Fatalf("dockerless server not found at %s -- re-run `swe-swe init --dockerless`: %v", bin, err)
 		}
@@ -426,6 +416,12 @@ func dockerlessPort(getenv func(string) string) string {
 const artifactGuardMatcher = "Artifact|mcp__claude_ai_Claude_Docs__.*"
 
 func writeDockerlessHooks(projectDir, sweDir string) error {
+	return writeDockerlessHooksTo(filepath.Join(projectDir, ".claude", "settings.local.json"), sweDir)
+}
+
+// writeDockerlessHooksTo writes the guard scripts into sweDir/hooks and merges
+// their wiring into the Claude settings file at settingsPath.
+func writeDockerlessHooksTo(settingsPath, sweDir string) error {
 	hooksDir := filepath.Join(sweDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return fmt.Errorf("hooks dir: %w", err)
@@ -443,7 +439,6 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 		return fmt.Errorf("write artifact guard: %w", err)
 	}
 
-	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
 	root := map[string]any{}
 	if b, err := os.ReadFile(settingsPath); err == nil {
 		// Invalid JSON starts fresh, mirroring the entrypoint's jq fallback.
@@ -490,7 +485,7 @@ func writeDockerlessHooks(projectDir, sweDir string) error {
 	root["hooks"] = hooks
 
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0o755); err != nil {
-		return fmt.Errorf("project .claude dir: %w", err)
+		return fmt.Errorf("settings dir: %w", err)
 	}
 	data, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {

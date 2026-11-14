@@ -8,46 +8,47 @@ import (
 	"testing"
 )
 
-// Host-side init must give every selected agent the config form it actually
-// reads. Before this, only Claude got one and the rest silently had no tools.
-func TestWriteDockerlessAgentMCPConfigs_PerAgentPaths(t *testing.T) {
+// Host-side init/up must give every selected agent the config form it can be
+// handed at launch, in <sweDir>/agent-config -- never in the project.
+func TestWriteHostAgentConfig_PerAgentPaths(t *testing.T) {
 	cases := []struct {
 		agent string
 		want  string
 	}{
-		{"claude", ".mcp.json"},
-		{"gemini", filepath.Join(".gemini", "settings.json")},
-		{"opencode", "opencode.json"},
-		{"pi", filepath.Join(".pi", "extensions", "mcp-bridge.ts")},
+		{"claude", hostClaudeMCPFile},
+		{"gemini", hostGeminiDefaultsFile},
+		{"opencode", hostOpencodeFile},
+		{"pi", hostPiBridgeFile},
 	}
 	for _, tc := range cases {
 		t.Run(tc.agent, func(t *testing.T) {
-			dir := t.TempDir()
-			written, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{tc.agent})
+			sweDir := t.TempDir()
+			written, err := writeHostAgentConfig(sweDir, []string{tc.agent}, false)
 			if err != nil {
 				t.Fatalf("write: %v", err)
 			}
-			path := filepath.Join(dir, tc.want)
-			if len(written) != 1 || written[0] != path {
-				t.Fatalf("written = %v, want [%s]", written, path)
+			path := filepath.Join(hostAgentConfigDir(sweDir), tc.want)
+			settings := filepath.Join(hostAgentConfigDir(sweDir), hostClaudeSettingsFile)
+			if len(written) != 2 || written[0] != path || written[1] != settings {
+				t.Fatalf("written = %v, want [%s %s]", written, path, settings)
 			}
 			if _, err := os.Stat(path); err != nil {
 				t.Fatalf("stat %s: %v", path, err)
 			}
 		})
 	}
-	// Codex has no project-scoped config, so it gets a launch wrapper on the
+	// Codex has no per-launch config file, so it gets a launch wrapper on the
 	// session PATH instead of a file in the user's home.
 	t.Run("codex", func(t *testing.T) {
-		dir := t.TempDir()
-		binDir := filepath.Join(dir, "bin")
-		written, err := writeDockerlessAgentMCPConfigs(dir, binDir, []string{"codex"})
+		sweDir := t.TempDir()
+		binDir := filepath.Join(sweDir, "bin")
+		written, err := writeHostAgentConfig(sweDir, []string{"codex"}, false)
 		if err != nil {
 			t.Fatalf("write: %v", err)
 		}
 		wrapper := filepath.Join(binDir, "codex")
-		if len(written) != 1 || written[0] != wrapper {
-			t.Fatalf("written = %v, want [%s]", written, wrapper)
+		if len(written) != 2 || written[0] != wrapper {
+			t.Fatalf("written = %v, want [%s, claude settings]", written, wrapper)
 		}
 		info, err := os.Stat(wrapper)
 		if err != nil {
@@ -79,50 +80,118 @@ func TestWriteDockerlessAgentMCPConfigs_PerAgentPaths(t *testing.T) {
 	})
 }
 
-// Writing must never clobber a config the user already keeps in the project.
-func TestWriteDockerlessAgentMCPConfigs_PreservesUserEntries(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "opencode.json")
-	prior := `{"model":"anthropic/claude","mcp":{"mine":{"type":"local","command":["my-mcp"]}}}`
-	if err := os.WriteFile(path, []byte(prior), 0644); err != nil {
+// The directory is rebuilt from scratch, so switching to MCP-less (or
+// dropping an agent) leaves no stale MCP config behind -- gap 1 of the
+// "new project has no swe-swe tools" fix. Hook guards stay.
+func TestWriteHostAgentConfig_RebuildDropsStale(t *testing.T) {
+	sweDir := t.TempDir()
+	all := []string{"claude", "gemini", "opencode", "pi", "codex"}
+	if _, err := writeHostAgentConfig(sweDir, all, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := writeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"opencode"}); err != nil {
-		t.Fatalf("write: %v", err)
+	if _, err := writeHostAgentConfig(sweDir, all, true); err != nil {
+		t.Fatal(err)
 	}
-	var doc map[string]any
-	b, _ := os.ReadFile(path)
-	if err := json.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("unparsable: %v\n%s", err, b)
+	entries, _ := os.ReadDir(hostAgentConfigDir(sweDir))
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
 	}
-	if doc["model"] != "anthropic/claude" {
-		t.Errorf("unrelated key dropped: %s", b)
+	if len(names) != 1 || names[0] != hostClaudeSettingsFile {
+		t.Errorf("after MCP-less rebuild, agent-config = %v, want only %s", names, hostClaudeSettingsFile)
 	}
-	mcp, _ := doc["mcp"].(map[string]any)
-	if _, ok := mcp["mine"]; !ok {
-		t.Errorf("user's server dropped: %s", b)
+	if _, err := os.Stat(filepath.Join(sweDir, "bin", "codex")); !os.IsNotExist(err) {
+		t.Errorf("codex wrapper survived MCP-less rebuild (stat err %v)", err)
 	}
-	if _, ok := mcp["swe-swe-agent-chat"]; !ok {
-		t.Errorf("swe-swe server not added: %s", b)
+	// Hook guards wired to the scripts in sweDir/hooks.
+	b, _ := os.ReadFile(filepath.Join(hostAgentConfigDir(sweDir), hostClaudeSettingsFile))
+	for _, want := range []string{"swe-swe-stop-guard.sh", "swe-swe-ask-guard.sh", "swe-swe-artifact-guard.sh"} {
+		if !strings.Contains(string(b), filepath.Join(sweDir, "hooks", want)) {
+			t.Errorf("claude settings missing %s:\n%s", want, b)
+		}
 	}
+}
 
-	// And an MCP-less re-init takes only ours back out.
-	if _, err := removeDockerlessAgentMCPConfigs(dir, filepath.Join(dir, "bin"), []string{"opencode"}); err != nil {
+// Older host inits wrote swe-swe's config into the project. Upgrading takes
+// only swe-swe's entries back out; the user's own stay (gap 2: a repo's
+// committed .mcp.json must not carry swe-swe's entries).
+func TestRemoveLegacyProjectAgentConfig(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, body string) {
+		t.Helper()
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".mcp.json", mcpStdioJSON())
+	write("opencode.json", `{"model":"anthropic/claude","mcp":{"mine":{"type":"local","command":["my-mcp"]},"swe-swe-agent-chat":{"type":"local","command":["x"]}}}`)
+	write(filepath.Join(".pi", "extensions", "mcp-bridge.ts"), "// bridge")
+	write(filepath.Join(".claude", "settings.local.json"), `{
+  "permissions": {"allow": ["Bash(make:*)"]},
+  "enabledMcpjsonServers": ["swe-swe", "swe-swe-agent-chat", "mine"],
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": "/h/hooks/swe-swe-ask-guard.sh"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "my-hook"}]}
+    ],
+    "Stop": [{"hooks": [{"type": "command", "command": "/h/hooks/swe-swe-stop-guard.sh"}]}]
+  }
+}`)
+
+	removed, err := removeLegacyProjectAgentConfig(dir)
+	if err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	b, _ = os.ReadFile(path)
-	if err := json.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("unparsable after remove: %v\n%s", err, b)
+	if len(removed) != 4 {
+		t.Errorf("removed = %v, want 4 paths", removed)
 	}
-	mcp, _ = doc["mcp"].(map[string]any)
-	if _, ok := mcp["mine"]; !ok {
-		t.Errorf("user's server removed too: %s", b)
+	if _, err := os.Stat(filepath.Join(dir, ".mcp.json")); !os.IsNotExist(err) {
+		t.Errorf("swe-swe-only .mcp.json should be deleted (stat err %v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".pi", "extensions", "mcp-bridge.ts")); !os.IsNotExist(err) {
+		t.Errorf("pi bridge should be removed (stat err %v)", err)
+	}
+
+	var oc map[string]any
+	b, _ := os.ReadFile(filepath.Join(dir, "opencode.json"))
+	if err := json.Unmarshal(b, &oc); err != nil {
+		t.Fatalf("opencode.json unparsable: %v\n%s", err, b)
+	}
+	mcp, _ := oc["mcp"].(map[string]any)
+	if _, ok := mcp["mine"]; !ok || oc["model"] != "anthropic/claude" {
+		t.Errorf("user's opencode config lost: %s", b)
 	}
 	if _, ok := mcp["swe-swe-agent-chat"]; ok {
 		t.Errorf("swe-swe server survived: %s", b)
 	}
-	if doc["model"] != "anthropic/claude" {
-		t.Errorf("unrelated key dropped on remove: %s", b)
+
+	var st map[string]any
+	b, _ = os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	if err := json.Unmarshal(b, &st); err != nil {
+		t.Fatalf("settings unparsable: %v\n%s", err, b)
+	}
+	if _, ok := st["permissions"]; !ok {
+		t.Errorf("user's permissions lost: %s", b)
+	}
+	if en, _ := st["enabledMcpjsonServers"].([]any); len(en) != 1 || en[0] != "mine" {
+		t.Errorf("enabledMcpjsonServers = %v, want [mine]", st["enabledMcpjsonServers"])
+	}
+	hooks, _ := st["hooks"].(map[string]any)
+	if _, ok := hooks["Stop"]; ok {
+		t.Errorf("swe-swe Stop guard survived: %s", b)
+	}
+	if pre, _ := hooks["PreToolUse"].([]any); len(pre) != 1 {
+		t.Errorf("PreToolUse = %v, want only the user's Bash hook", pre)
+	}
+
+	// Running again changes nothing.
+	again, err := removeLegacyProjectAgentConfig(dir)
+	if err != nil || len(again) != 0 {
+		t.Errorf("second run: removed=%v err=%v, want none", again, err)
 	}
 }
 

@@ -10,7 +10,7 @@ Init Options:
   --previous-init-flags=reuse            Reapply saved configuration from previous init
   --previous-init-flags=ignore           Ignore saved configuration, use provided flags
   --runtime MODE                         Where the environment runs (default: container)
-  --without-mcp                          MCP-less mode (--runtime=host only): no .mcp.json; the server runs
+  --without-mcp                          MCP-less mode (--runtime=host only): no MCP config; the server runs
                                          an mcp-cli-proxy fleet and the agent uses the bundled `mcp` CLI
                                            container                     docker compose
                                            container-with-docker-socket  ...plus the host docker socket,
@@ -83,14 +83,15 @@ host's loopback, which host mode already binds directly. It is deliberately not
 forwarded to `swe-swe-server`, which has no such flag and would exit 2 if given
 it.
 
-Host mode writes each selected agent the MCP config it reads -- project-scoped
-for claude/opencode/gemini/pi, a PATH wrapper for codex -- and never touches a
-home directory. Goose has no project-scoped format, so it gets none and `init`
+Host mode gives each selected agent swe-swe's MCP config at launch -- flags or
+an env var for claude/opencode/gemini/pi, a PATH wrapper for codex -- so every
+project is covered and no project file or home directory is touched. Goose has
+no per-launch config option, so it gets none and `init`
 says so. See [dockerless.md](dockerless.md#agent-mcp-config-host-side).
 
 `--without-mcp` is host-mode only: it selects MCP-less mode, for hosts where the
 agent's native MCP client is gated (a managed Claude Code that ignores project
-`.mcp.json`, say). No `.mcp.json` is written; instead `swe-swe up` exports
+`.mcp.json`, say). No MCP config is written; instead `swe-swe up` exports
 `SWE_MCP_LESS=1`, `swe-swe-server` launches one `mcp-cli-proxy` per MCP server
 per session, and the agent reaches every tool through the bundled `mcp` CLI over
 unix sockets (`mcp -h` prints the same docs a native client would inject). The

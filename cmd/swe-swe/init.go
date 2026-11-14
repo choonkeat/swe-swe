@@ -354,7 +354,7 @@ type InitConfig struct {
 	// container-with-docker-socket / host). WithDocker above is still written
 	// for one release cycle so an older CLI can read a newer init.json.
 	Runtime string `json:"runtime,omitempty"`
-	// WithoutMCP is MCP-less mode (host runtime only): no .mcp.json is
+	// WithoutMCP is MCP-less mode (host runtime only): no agent MCP config is
 	// written and `swe-swe up` exports SWE_MCP_LESS=1 so the server runs the
 	// mcp-cli-proxy fleet and the agent uses the `mcp` CLI.
 	WithoutMCP       bool   `json:"withoutMCP,omitempty"`
@@ -784,7 +784,7 @@ func handleInit() {
 	withDocker := fs.Bool("with-docker", false, "Mount Docker socket to allow container to run Docker commands on host")
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux, or macOS experimentally)")
 	runtimeFlag := fs.String("runtime", DefaultRuntime, "Where the environment runs: 'container' (docker compose), 'container-with-docker-socket' (compose plus the host docker socket), or 'host' (no containers; Linux, or macOS experimentally)")
-	withoutMCP := fs.Bool("without-mcp", false, "MCP-less mode (--runtime=host only): write no .mcp.json; swe-swe-server runs one mcp-cli-proxy per MCP server per session and the agent reaches every tool through the bundled mcp CLI over unix sockets. For hosts where the agent's native MCP client is gated.")
+	withoutMCP := fs.Bool("without-mcp", false, "MCP-less mode (--runtime=host only): write no agent MCP config; swe-swe-server runs one mcp-cli-proxy per MCP server per session and the agent reaches every tool through the bundled mcp CLI over unix sockets. For hosts where the agent's native MCP client is gated.")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")

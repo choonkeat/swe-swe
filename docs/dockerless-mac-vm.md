@@ -72,7 +72,7 @@ limactl shell swe
 
 `--mount-writable` matters: Lima mounts your Mac home into the VM read-only
 by default, and `swe-swe init` must write into your project directory
-(`.mcp.json`, `swe-swe/`, ...). For an already-created VM:
+(`.swe-swe/`, ...). For an already-created VM:
 
 ```sh
 limactl stop swe

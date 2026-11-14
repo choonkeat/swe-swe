@@ -46,37 +46,6 @@ func agentsWithoutHostMCPConfig(agents []string) []string {
 	return out
 }
 
-// writeDockerlessAgentMCPConfigs writes each selected agent's MCP config and
-// returns the paths written, for the caller to report.
-func writeDockerlessAgentMCPConfigs(projectDir, binDir string, agents []string) ([]string, error) {
-	var written []string
-	for _, agent := range agents {
-		var path string
-		var err error
-		switch agent {
-		case "claude":
-			path, err = writeMCPJSONMerging(filepath.Join(projectDir, ".mcp.json"), "mcpServers", anyMap(mcpStdioSpecs()))
-		case "gemini":
-			path, err = writeMCPJSONMerging(filepath.Join(projectDir, ".gemini", "settings.json"), "mcpServers", anyMap(mcpStdioSpecs()))
-		case "opencode":
-			path, err = writeMCPJSONMerging(filepath.Join(projectDir, "opencode.json"), "mcp", anyMap(mcpOpencodeSpecs()))
-		case "codex":
-			path, err = writeCodexLaunchWrapper(binDir)
-		case "pi":
-			path, err = writePiMCPBridge(projectDir)
-		default:
-			continue
-		}
-		if err != nil {
-			return written, fmt.Errorf("%s: %w", agent, err)
-		}
-		if path != "" {
-			written = append(written, path)
-		}
-	}
-	return written, nil
-}
-
 // removeDockerlessAgentMCPConfigs retires whatever a previous native-MCP init
 // wrote, so an MCP-less re-init leaves no stale server config behind.
 func removeDockerlessAgentMCPConfigs(projectDir, binDir string, agents []string) ([]string, error) {
@@ -128,44 +97,6 @@ func anyMap[V any](m map[string]V) map[string]any {
 		out[k] = v
 	}
 	return out
-}
-
-// writeMCPJSONMerging sets our servers under key in a JSON document,
-// preserving every other key and every server the user added themselves.
-// A file we cannot parse is left alone rather than overwritten.
-func writeMCPJSONMerging(path, key string, servers map[string]any) (string, error) {
-	doc := map[string]any{}
-	data, err := os.ReadFile(path)
-	switch {
-	case err == nil:
-		if json.Unmarshal(data, &doc) != nil {
-			return "", fmt.Errorf("%s is not valid JSON; leaving it alone", path)
-		}
-	case !os.IsNotExist(err):
-		return "", err
-	}
-	existing, _ := doc[key].(map[string]any)
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	for _, name := range mcpRetiredServers {
-		delete(existing, name)
-	}
-	for name, spec := range servers {
-		existing[name] = spec
-	}
-	doc[key] = existing
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return "", err
-	}
-	if err := os.WriteFile(path, append(out, '\n'), 0644); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 // removeMCPEntries drops only our servers from a JSON config. A file that
@@ -268,21 +199,3 @@ func shellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// writePiMCPBridge installs the Pi extension project-locally. Pi prefers a
-// project .pi/extensions/ override, so this reaches sessions in this project
-// without touching the user's ~/.pi.
-func writePiMCPBridge(projectDir string) (string, error) {
-	src, err := assets.ReadFile("templates/host/mcp-bridge.ts")
-	if err != nil {
-		return "", err
-	}
-	dir := filepath.Join(projectDir, ".pi", "extensions")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, "mcp-bridge.ts")
-	if err := os.WriteFile(path, src, 0644); err != nil {
-		return "", err
-	}
-	return path, nil
-}

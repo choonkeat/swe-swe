@@ -897,6 +897,10 @@ func buildSessionEnv(p SessionEnvParams) []string {
 		}
 		env = append(env, kept...)
 	}
+	// Host runtime: point env-configured agents at swe-swe's config
+	// (host_agent_config.go). Nothing on a container. Before .swe-swe/env, so
+	// a workspace that sets its own OPENCODE_CONFIG etc. wins.
+	env = append(env, hostAgentEnv()...)
 	// Append user-defined vars from .swe-swe/env (last so they take precedence).
 	// Expand $VAR references against the session env built above, so a line like
 	// PATH=/usr/local/go/bin:$PATH prepends to the SESSION PATH (which includes
@@ -1650,6 +1654,7 @@ func (s *Session) RestartProcess(cmdStr string) error {
 
 	// Create new command and PTY
 	cmdName, cmdArgs := parseCommand(cmdStr)
+	cmdArgs = hostAgentArgs(cmdName, cmdArgs)
 
 	// Wrap with script for recording (reuse existing recording prefix)
 	cmdName, cmdArgs = wrapWithScript(cmdName, cmdArgs, s.RecordingPrefix)
@@ -5724,6 +5729,9 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 	// Create new session with PTY using assistant's shell command, plus any
 	// extra CLI flags the user supplied (e.g. --channels server:agent-chat).
 	cmdName, cmdArgs := buildAgentArgv(shellCmdToUse, p.ExtraArgs)
+	// Host runtime: load swe-swe's MCP servers + hook guards via launch
+	// flags (host_agent_config.go). Nothing on a container.
+	cmdArgs = hostAgentArgs(cmdName, cmdArgs)
 	if p.ExtraArgs != "" {
 		log.Printf("Session %s: extra CLI args: %s", p.UUID, p.ExtraArgs)
 	}

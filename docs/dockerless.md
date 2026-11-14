@@ -13,16 +13,18 @@ machine, you already have almost everything swe-swe needs.
 
 ```sh
 npm i -g swe-swe             # or run ad hoc: npx -y swe-swe <cmd>
-swe-swe init --runtime=host  # writes ./.swe-swe + project integration files
+swe-swe init --runtime=host  # writes ./.swe-swe
 swe-swe up                   # starts swe-swe on http://localhost:1977
 swe-swe up --open            # ...and opens your browser
 ```
 
 Init writes its runtime payload (the server and helper binaries) under
-`./.swe-swe`, plus two project integration files so the agent is wired up
-the way the container image wires it: a project-scoped `.mcp.json`, and
-`.claude/settings.local.json` with the hook guards. Nothing lands in your
-global `~/.claude`.
+`./.swe-swe`, plus the agent's config (swe-swe's MCP servers and the
+Claude hook guards) in an `agent-config/` folder next to those binaries. The server hands that
+config to the agent each time it starts one, so every project you open --
+this folder, a new project, a clone, a worktree -- gets swe-swe's tools the
+same way. Nothing is written into your project files or your global
+`~/.claude`.
 
 `swe-swe up` notices this is a dockerless init and runs everything
 directly -- same command you would use for a Docker setup, it just does
@@ -64,23 +66,31 @@ a checkout of one of those very repos cannot shadow the tool.
 
 ## Agent MCP config, host-side
 
-`swe-swe init --runtime=host` writes each selected agent the MCP config it
-actually reads. Nothing goes into a home directory: in the container those
-paths sit in a throwaway `/home/app`, but on a host they are the user's own
-settings.
+`swe-swe init --runtime=host` writes each selected agent's MCP config into
+swe-swe's `agent-config/` folder (next to its `bin/`), and `swe-swe up` rebuilds that folder on every
+start (so a re-init with other agents or `--without-mcp` leaves nothing
+stale). The server passes it to the agent at launch. Nothing goes into a
+project or a home directory: in the container those paths sit in a
+throwaway `/home/app`, but on a host they are the user's own settings, and
+a project's own `.mcp.json` may be committed to git.
 
-| Agent    | What init writes                                    |
-|----------|-----------------------------------------------------|
-| claude   | project `.mcp.json`                                  |
-| opencode | project `opencode.json` (merged, `mcp` key)          |
-| gemini   | project `.gemini/settings.json` (merged)             |
-| pi       | project `.pi/extensions/mcp-bridge.ts`               |
-| codex    | a `bin/codex` wrapper passing `-c mcp_servers.*`     |
-| goose    | nothing -- see below                                 |
-| aider    | nothing (aider has no MCP support in either runtime) |
+| Agent    | How the config reaches it                                        |
+|----------|------------------------------------------------------------------|
+| claude   | `--mcp-config claude-mcp.json --settings claude-settings.json`   |
+| opencode | `OPENCODE_CONFIG=opencode.json` (merged with yours)              |
+| gemini   | `GEMINI_CLI_SYSTEM_DEFAULTS_PATH=gemini-system-defaults.json` (merged) |
+| pi       | `-e pi-mcp-bridge.ts`                                            |
+| codex    | a `bin/codex` wrapper passing `-c mcp_servers.*`                 |
+| goose    | nothing -- see below                                             |
+| aider    | nothing (aider has no MCP support in either runtime)             |
 
-The JSON writers merge: an existing file keeps its own keys and any servers
-you added yourself, and `--without-mcp` takes back only swe-swe's entries.
+Each is an extra layer on top of your own config, never a replacement: your
+own servers and settings, global or per-project, still apply. An
+`OPENCODE_CONFIG` or `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` you set yourself is
+left alone (yours wins). Earlier versions wrote these into the project
+(`.mcp.json`, `opencode.json`, `.gemini/settings.json`,
+`.pi/extensions/mcp-bridge.ts`, `.claude/settings.local.json`); the next
+`swe-swe up` takes only swe-swe's entries back out of them.
 
 Codex is the exception because it has no project-scoped config at all -- only
 `~/.codex/config.toml`, which is yours. So swe-swe puts a `codex` wrapper on
@@ -110,7 +120,7 @@ swe-swe init --runtime=host --without-mcp
 swe-swe up
 ```
 
-No `.mcp.json` is written (one from an earlier init is retired). Instead
+No MCP config is written (only the Claude hook guards). Instead
 `swe-swe up` exports `SWE_MCP_LESS=1` and, per session, `swe-swe-server`
 launches one `mcp-cli-proxy` per MCP server (agent-chat, playwright,
 preview, swe-swe), each serving a unix socket under
