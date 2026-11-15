@@ -11,6 +11,11 @@
 //	mcp <server>                full docs for every tool (what native MCP injects)
 //	mcp <server> <tool> -h      full docs for one tool (from its JSON Schema)
 //	mcp <server> <tool> [flags] call the tool; print its result
+//	mcp <server> --read-resource <uri> [--stdout]
+//	                            resources/read; save contents to a file
+//
+// Options after <server> are dash-prefixed so they can never collide with a
+// tool name, and an older `mcp` rejects them cleanly ("has no tool").
 //
 // Flags are synthesized from each tool's inputSchema. Results render as:
 // text -> stdout, image -> written to a file whose path is printed, structured
@@ -34,7 +39,9 @@ import (
 	"bufio"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"mime"
 	"net"
 	"os"
 	"path/filepath"
@@ -91,6 +98,14 @@ type rpcError struct {
 
 func (e *rpcError) String() string { return fmt.Sprintf("%s (code %d)", e.Message, e.Code) }
 
+// Error lets rpc return the server's JSON-RPC error as-is, so callers can
+// branch on Code (e.g. -32601 method not found) via errors.As.
+func (e *rpcError) Error() string { return e.String() }
+
+// rpcMethodNotFound is the JSON-RPC code a server returns for a method it
+// does not implement (e.g. resources/read on a tools-only server).
+const rpcMethodNotFound = -32601
+
 // dial connects to a server's socket, mapping "not found" to a friendly error.
 func dial(server string) (net.Conn, error) {
 	sock := filepath.Join(socketDir(), server+".sock")
@@ -136,7 +151,7 @@ func rpc(conn net.Conn, method string, params any) (json.RawMessage, error) {
 			continue
 		}
 		if resp.Error != nil {
-			return nil, fmt.Errorf("%s", resp.Error.String())
+			return nil, resp.Error
 		}
 		return resp.Result, nil
 	}
@@ -383,8 +398,32 @@ type contentBlock struct {
 	MimeType string `json:"mimeType"` // for image/audio
 }
 
-func extFor(mime string) string {
-	switch mime {
+// extFor maps a MIME type to a file extension. Parameters are ignored, so the
+// MCP Apps page type "text/html;profile=mcp-app" maps to ".html".
+func extFor(mimeType string) string {
+	mt := strings.ToLower(strings.TrimSpace(mimeType))
+	if parsed, _, err := mime.ParseMediaType(mimeType); err == nil {
+		mt = parsed
+	} else if i := strings.IndexByte(mt, ';'); i >= 0 {
+		mt = strings.TrimSpace(mt[:i])
+	}
+	switch mt {
+	case "text/html":
+		return ".html"
+	case "text/plain":
+		return ".txt"
+	case "text/markdown":
+		return ".md"
+	case "text/css":
+		return ".css"
+	case "text/javascript", "application/javascript":
+		return ".js"
+	case "application/json":
+		return ".json"
+	case "image/svg+xml":
+		return ".svg"
+	case "application/pdf":
+		return ".pdf"
 	case "image/png":
 		return ".png"
 	case "image/jpeg":
@@ -416,7 +455,7 @@ func render(server, toolName string, raw json.RawMessage, out, errOut *os.File) 
 				fmt.Fprintf(errOut, "mcp: failed to decode %s data: %v\n", b.Type, err)
 				continue
 			}
-			f, err := os.CreateTemp(imageDir(), fmt.Sprintf("%s-%s-*%s", server, toolName, extFor(b.MimeType)))
+			f, err := os.CreateTemp(outDir(), fmt.Sprintf("%s-%s-*%s", server, toolName, extFor(b.MimeType)))
 			if err != nil {
 				fmt.Fprintf(errOut, "mcp: failed to create file for %s: %v\n", b.Type, err)
 				continue
@@ -443,11 +482,169 @@ func render(server, toolName string, raw json.RawMessage, out, errOut *os.File) 
 	return 0
 }
 
-func imageDir() string {
+// outDir is where binary tool results and read resources are saved.
+// SWE_MCP_IMAGE_DIR keeps its historical name for compatibility.
+func outDir() string {
 	if d := os.Getenv("SWE_MCP_IMAGE_DIR"); d != "" {
 		return d
 	}
 	return os.TempDir()
+}
+
+// --- resources ----------------------------------------------------------------
+
+type resourceContent struct {
+	URI      string          `json:"uri"`
+	MimeType string          `json:"mimeType"`
+	Text     *string         `json:"text"`
+	Blob     *string         `json:"blob"`
+	Meta     json.RawMessage `json:"_meta"`
+}
+
+// fileSafe turns a resource URI into a temp-file name stem: os.CreateTemp
+// rejects patterns containing a path separator, and "ui://cal/view.html" has
+// several. A trailing ext equal to the one we append is dropped.
+func fileSafe(uri, ext string) string {
+	var b strings.Builder
+	for _, r := range uri {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	s := strings.TrimSuffix(b.String(), ext)
+	s = strings.Trim(s, "_")
+	if len(s) > 80 {
+		s = s[len(s)-80:]
+	}
+	if s == "" {
+		s = "resource"
+	}
+	return s
+}
+
+// runReadResource implements `mcp <server> --read-resource <uri> [--stdout]`.
+// Default: each content entry is written to a file under outDir() and its
+// path printed -- MCP Apps pages are often 100s of KB of bundled HTML/JS, too
+// big to dump into an agent's context. --stdout prints text entries instead.
+// A non-empty _meta on an entry (MCP Apps puts CSP/permission hints there) is
+// printed as `[resource-meta <uri>] <json>` -- on stdout normally, on stderr
+// with --stdout so the content stays pipeable.
+func runReadResource(server string, rest []string, out, errOut *os.File) int {
+	var uri string
+	toStdout := false
+	for _, a := range rest {
+		switch {
+		case a == "--stdout":
+			toStdout = true
+		case uri == "" && !strings.HasPrefix(a, "-"):
+			uri = a
+		default:
+			fmt.Fprintf(errOut, "mcp: unexpected argument %q (usage: mcp %s --read-resource <uri> [--stdout])\n", a, server)
+			return 1
+		}
+	}
+	if uri == "" {
+		fmt.Fprintf(errOut, "mcp: missing <uri> (usage: mcp %s --read-resource <uri> [--stdout])\n", server)
+		return 1
+	}
+
+	conn, err := dial(server)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+	defer conn.Close()
+	raw, err := rpc(conn, "resources/read", map[string]any{"uri": uri})
+	if err != nil {
+		var re *rpcError
+		if errors.As(err, &re) && re.Code == rpcMethodNotFound {
+			fmt.Fprintf(errOut, "mcp: %s does not serve resources\n", server)
+		} else {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+		}
+		return 1
+	}
+	var r struct {
+		Contents []resourceContent `json:"contents"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		fmt.Fprintf(errOut, "mcp: parsing resources/read: %v\n", err)
+		return 1
+	}
+	if len(r.Contents) == 0 {
+		fmt.Fprintf(errOut, "mcp: %s returned no contents for %s\n", server, uri)
+		return 1
+	}
+
+	code := 0
+	metaOut := out
+	if toStdout {
+		metaOut = errOut
+	}
+	for _, c := range r.Contents {
+		cURI := c.URI
+		if cURI == "" {
+			cURI = uri
+		}
+		var data []byte
+		switch {
+		case c.Text != nil:
+			data = []byte(*c.Text)
+		case c.Blob != nil:
+			if toStdout {
+				fmt.Fprintf(errOut, "mcp: %s is binary (%s); omit --stdout to save it to a file\n", cURI, c.MimeType)
+				code = 1
+				continue
+			}
+			data, err = base64.StdEncoding.DecodeString(*c.Blob)
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to decode blob for %s: %v\n", cURI, err)
+				code = 1
+				continue
+			}
+		default:
+			fmt.Fprintf(errOut, "mcp: %s has neither text nor blob\n", cURI)
+			code = 1
+			continue
+		}
+
+		if toStdout {
+			out.Write(data)
+			if len(data) > 0 && data[len(data)-1] != '\n' {
+				fmt.Fprintln(out)
+			}
+		} else {
+			ext := extFor(c.MimeType)
+			f, err := os.CreateTemp(outDir(), fmt.Sprintf("%s-%s-*%s", server, fileSafe(cURI, ext), ext))
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to create file for %s: %v\n", cURI, err)
+				code = 1
+				continue
+			}
+			_, werr := f.Write(data)
+			cerr := f.Close()
+			if werr != nil || cerr != nil {
+				fmt.Fprintf(errOut, "mcp: failed to write %s: %v\n", f.Name(), errors.Join(werr, cerr))
+				code = 1
+				continue
+			}
+			fmt.Fprintf(out, "[resource %s %s saved to %s]\n", cURI, c.MimeType, f.Name())
+		}
+
+		if m := strings.TrimSpace(string(c.Meta)); m != "" && m != "null" && m != "{}" {
+			var compact strings.Builder
+			if b, err := json.Marshal(json.RawMessage(c.Meta)); err == nil {
+				compact.Write(b)
+			} else {
+				compact.WriteString(m)
+			}
+			fmt.Fprintf(metaOut, "[resource-meta %s] %s\n", cURI, compact.String())
+		}
+	}
+	return code
 }
 
 // --- help ---------------------------------------------------------------------
@@ -702,6 +899,18 @@ func run(args []string, out, errOut *os.File) int {
 	}
 	toolName := args[1]
 	rest := args[2:]
+
+	// Dash-prefixed options route BEFORE tool lookup: no tool name can start
+	// with "-", so these never shadow a real tool.
+	if strings.HasPrefix(toolName, "-") {
+		switch toolName {
+		case "--read-resource":
+			return runReadResource(server, rest, out, errOut)
+		default:
+			fmt.Fprintf(errOut, "mcp: unknown option %q (run: mcp -h)\n", toolName)
+			return 1
+		}
+	}
 
 	tools, err := listTools(server)
 	if err != nil {

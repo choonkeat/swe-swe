@@ -322,6 +322,15 @@ func TestRemindTipPrecedesFailure(t *testing.T) {
 // in for an mcp-cli-proxy without needing a child process.
 func fakeSocketServer(t *testing.T, server string, handler func(method string, params json.RawMessage) json.RawMessage) string {
 	t.Helper()
+	return fakeSocketServerRPC(t, server, func(method string, params json.RawMessage) (json.RawMessage, *rpcError) {
+		return handler(method, params), nil
+	})
+}
+
+// fakeSocketServerRPC is fakeSocketServer whose handler can also answer with a
+// JSON-RPC error (e.g. -32601 for a server without resources).
+func fakeSocketServerRPC(t *testing.T, server string, handler func(method string, params json.RawMessage) (json.RawMessage, *rpcError)) string {
+	t.Helper()
 	dir := t.TempDir()
 	sock := filepath.Join(dir, server+".sock")
 	ln, err := net.Listen("unix", sock)
@@ -348,8 +357,13 @@ func fakeSocketServer(t *testing.T, server string, handler func(method string, p
 					if err := json.Unmarshal(sc.Bytes(), &req); err != nil {
 						continue
 					}
-					result := handler(req.Method, req.Params)
-					resp := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(req.ID), "result": json.RawMessage(result)}
+					result, rerr := handler(req.Method, req.Params)
+					resp := map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(req.ID)}
+					if rerr != nil {
+						resp["error"] = rerr
+					} else {
+						resp["result"] = json.RawMessage(result)
+					}
 					b, _ := json.Marshal(resp)
 					c.Write(append(b, '\n'))
 				}
