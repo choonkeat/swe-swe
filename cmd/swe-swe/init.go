@@ -1657,11 +1657,8 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - ./home:/home/app%s%s
       # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects)
       - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
-      - type: tmpfs
-        target: /workspace/.swe-swe/uploads
-        tmpfs:
-          size: 100M
-          mode: 0777
+      # File uploads: Docker-managed volume on disk (see docker-compose.yml)
+      - uploads:/workspace/.swe-swe/uploads
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
@@ -1685,6 +1682,9 @@ func executeInit(absPath string, sweDir string, config InitConfig, sslMode, sslH
       - SWE_VNC_PORTS=${SWE_VNC_PORTS:-7000-7019}
       - PORT=${PORT:-}%s
     restart: unless-stopped
+
+volumes:
+  uploads:
 `, extraPorts, reposDirValue, certVolume, dockerVolume, singlePortDefault, certEnvVars))
 			} else {
 				content = []byte(processSimpleTemplate(string(content), config.withDockerSocket(), config.SSL, hostUID, hostGID, config.Email, sslDomain, config.ReposDir, publishedPreviewPorts, publishedPublicPorts, config.ProxyPortOffset, config.TunnelServerURL, config.TunnelUnique, config.TunnelClientCert, config.TunnelLocalPorts))

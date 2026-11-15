@@ -184,6 +184,13 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN if ! getent group 1000 > /dev/null; then groupadd -K GID_MIN=20 -g 1000 app; fi && \
     useradd -m -K UID_MIN=100 -u 1000 -g 1000 -s /bin/bash app
 
+# Upload folder, owned by app. The compose file mounts a named volume here;
+# Docker copies this folder's owner and mode into a new volume on first use,
+# so the non-root server can write to it without any chown at runtime.
+RUN mkdir -p /workspace/.swe-swe/uploads && \
+    chown 1000:1000 /workspace/.swe-swe/uploads && \
+    chmod 0777 /workspace/.swe-swe/uploads
+
 # Minimal shell prompt: just current directory basename + $
 RUN echo "PS1='\\W\\$ '" >> /etc/bash.bashrc
 

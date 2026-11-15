@@ -238,6 +238,14 @@ for name in xdg-open open x-www-browser www-browser sensible-browser; do
 done
 echo -e "${GREEN}[ok] Created open/xdg-open shims in .swe-swe/bin${NC}"
 
+# Uploads are temporary: empty the upload volume at each start. Only when it
+# is its own mount (the compose volume) -- never a folder inside the user's
+# bind-mounted workspace.
+if mountpoint -q /workspace/.swe-swe/uploads 2>/dev/null; then
+    find /workspace/.swe-swe/uploads -mindepth 1 -delete 2>/dev/null || true
+    echo -e "${GREEN}[ok] Emptied upload folder${NC}"
+fi
+
 # {{IF DOCKER}}
 # Switch to app user and execute the original command
 # Use exec to replace this process, preserving signal handling

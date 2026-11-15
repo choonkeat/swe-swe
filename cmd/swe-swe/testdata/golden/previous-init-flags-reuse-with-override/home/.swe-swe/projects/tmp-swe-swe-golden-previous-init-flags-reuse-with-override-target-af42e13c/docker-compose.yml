@@ -1849,12 +1849,11 @@ services:
       - ${HOME}/.swe-swe/tls:/etc/traefik/tls:ro
       # Mount Docker socket for container to run Docker commands on host
       - /var/run/docker.sock:/var/run/docker.sock
-      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
-      - type: tmpfs
-        target: /workspace/.swe-swe/uploads
-        tmpfs:
-          size: 100M
-          mode: 0777
+      # File uploads live in a Docker-managed volume, on disk: writable
+      # regardless of bind mount permissions (macOS Docker Desktop), without
+      # the RAM use and 100 MB cap of the old tmpfs. Emptied at each start by
+      # entrypoint.sh, so uploads stay temporary.
+      - uploads:/workspace/.swe-swe/uploads
     working_dir: /workspace
     networks:
       - swe-network
@@ -1913,6 +1912,9 @@ services:
       # when set and different from SWE_PORT)
       - PORT=${PORT:-}
     restart: unless-stopped
+
+volumes:
+  uploads:
 
 networks:
   swe-network:

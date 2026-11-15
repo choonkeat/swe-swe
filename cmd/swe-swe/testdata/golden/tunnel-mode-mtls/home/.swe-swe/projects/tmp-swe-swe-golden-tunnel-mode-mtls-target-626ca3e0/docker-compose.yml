@@ -35,12 +35,11 @@ services:
       # --tunnel-client-cert. The matching private key is the agent's
       # existing identity.key, so no key is mounted here.
       - /etc/swe-swe-tunnel/client.crt:/home/app/.swe-swe-tunnel/client.crt:ro
-      # Tmpfs for file uploads - ensures writable regardless of bind mount permissions
-      - type: tmpfs
-        target: /workspace/.swe-swe/uploads
-        tmpfs:
-          size: 100M
-          mode: 0777
+      # File uploads live in a Docker-managed volume, on disk: writable
+      # regardless of bind mount permissions (macOS Docker Desktop), without
+      # the RAM use and 100 MB cap of the old tmpfs. Emptied at each start by
+      # entrypoint.sh, so uploads stay temporary.
+      - uploads:/workspace/.swe-swe/uploads
     working_dir: /workspace
     networks:
       - swe-network
@@ -114,6 +113,9 @@ services:
       # supervisor's ClientCertPath option.
       - SWE_TUNNEL_CLIENT_CERT=/home/app/.swe-swe-tunnel/client.crt
     restart: unless-stopped
+
+volumes:
+  uploads:
 
 networks:
   swe-network:

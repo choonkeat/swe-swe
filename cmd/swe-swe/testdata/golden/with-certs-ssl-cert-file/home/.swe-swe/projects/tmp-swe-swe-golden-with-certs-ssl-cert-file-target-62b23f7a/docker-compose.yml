@@ -20,11 +20,8 @@ services:
       - ./certs:/swe-swe/certs:ro
       # Global-tier 'swe-swe proxy --global' scripts (host home, shared across projects)
       - ${HOME}/.swe-swe/proxy:/home/app/.swe-swe/proxy
-      - type: tmpfs
-        target: /workspace/.swe-swe/uploads
-        tmpfs:
-          size: 100M
-          mode: 0777
+      # File uploads: Docker-managed volume on disk (see docker-compose.yml)
+      - uploads:/workspace/.swe-swe/uploads
     working_dir: /workspace
     environment:
       - SWE_PORT=${SWE_PORT:-1977}
@@ -50,3 +47,6 @@ services:
       - NODE_EXTRA_CA_CERTS=${NODE_EXTRA_CA_CERTS:-}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-}
     restart: unless-stopped
+
+volumes:
+  uploads:

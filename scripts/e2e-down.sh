@@ -26,7 +26,8 @@ teardown_mode() {
     echo "Tearing down e2e-${mode}..."
     if [[ -n "$project_path" && -d "$project_path" ]]; then
         cd "$project_path"
-        docker compose down 2>/dev/null || true
+        # -v: also drop the throwaway env's uploads volume
+        docker compose down -v 2>/dev/null || true
     fi
 
     rm -f "$state_file"

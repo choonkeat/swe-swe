@@ -254,7 +254,7 @@ Merge conflicts in `agent-chats/index.html` need no manual resolution: accept ei
 - **Terminal paperclip / drag-drop**: the page refuses a too-large file before sending it, and the server checks again. Files are streamed to disk in 1 MB pieces, so a large upload does not sit in server memory.
 - **Agent Chat paperclip / paste**: chat sessions copy the value to agent-chat's own `AGENT_CHAT_UPLOAD_MAX_MB`, unless that is already set (an explicit `AGENT_CHAT_UPLOAD_MAX_MB` wins). The file chip shows the reason, e.g. "too large (65.2 MB); limit is 50.0 MB". Requires an agent-chat release with this setting; older agent-chat has a fixed 50 MB cap.
 
-Terminal uploads land in `.swe-swe/uploads/`. On the compose stack that directory for `/workspace` is a 100 MB in-memory filesystem, so files over about 100 MB fail there whatever the limit says; sessions in other directories write to disk.
+Terminal uploads land in `.swe-swe/uploads/`. For `/workspace` sessions in the container that folder is a Docker-managed volume on disk (emptied at each container start, so uploads are temporary); sessions in other directories write into that directory's own `.swe-swe/uploads/`.
 
 ## Runtime
 
