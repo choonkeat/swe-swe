@@ -247,6 +247,15 @@ The default is presence-checked, so any user-set value wins:
 
 Merge conflicts in `agent-chats/index.html` need no manual resolution: accept either side; the next export regenerates it from the `*.md` files.
 
+### Upload size limit (SWE_SWE_UPLOAD_MAX_MB)
+
+`SWE_SWE_UPLOAD_MAX_MB` caps the size of one uploaded file, in megabytes (decimals allowed). Unset, empty, or `0` means no limit, which is the default. Set it in `.swe-swe/env` or the Settings panel env textarea; it applies to sessions started afterwards.
+
+- **Terminal paperclip / drag-drop**: the page refuses a too-large file before sending it, and the server checks again. Files are streamed to disk in 1 MB pieces, so a large upload does not sit in server memory.
+- **Agent Chat paperclip / paste**: chat sessions copy the value to agent-chat's own `AGENT_CHAT_UPLOAD_MAX_MB`, unless that is already set (an explicit `AGENT_CHAT_UPLOAD_MAX_MB` wins). The file chip shows the reason, e.g. "too large (65.2 MB); limit is 50.0 MB". Requires an agent-chat release with this setting; older agent-chat has a fixed 50 MB cap.
+
+Terminal uploads land in `.swe-swe/uploads/`. On the compose stack that directory for `/workspace` is a 100 MB in-memory filesystem, so files over about 100 MB fail there whatever the limit says; sessions in other directories write to disk.
+
 ## Runtime
 
 ### YOLO Mode

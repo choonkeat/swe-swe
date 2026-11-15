@@ -538,6 +538,7 @@ type Session struct {
 	Name            string // User-assigned session name (optional)
 	BranchName      string // Git branch name for this session's worktree (derived from Name)
 	WorkDir         string // Working directory for the session (empty = server cwd)
+	UploadMaxBytes  int64  // Per-file upload cap from SWE_SWE_UPLOAD_MAX_MB (0 = no limit)
 	ExtraArgs       string // Extra CLI flags appended to the agent command (for restart)
 	Assistant       string // The assistant key (e.g., "claude", "gemini", "custom")
 	AssistantConfig AssistantConfig
@@ -5827,6 +5828,13 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		env = append(env, fmt.Sprintf("AGENT_CHAT_EVENT_LOG=%s", chatLogPath))
 		log.Printf("Chat event log: %s", chatLogPath)
 		env = defaultChatExportEnv(env, workDir)
+		env = uploadLimitChatEnv(env)
+	}
+
+	// Upload size limit for this session's terminal paperclip (upload_limit.go).
+	uploadMaxBytes, uploadLimitErr := parseUploadMaxBytes(envLookup(env)(uploadMaxEnvKey))
+	if uploadLimitErr != nil {
+		log.Printf("Session %s: %v; uploads are not limited", p.UUID, uploadLimitErr)
 	}
 
 	// Agent-chat sidecar context for chat sessions.
@@ -5919,6 +5927,7 @@ func getOrCreateSession(p SessionParams, allowCreate bool) (*Session, bool, erro
 		agentChatCancel: sessionCancel,
 		McpLessFleet:    mcpLessFleet,
 		SessionMode:     p.SessionMode,
+		UploadMaxBytes:  uploadMaxBytes,
 		ChatLogPath:     chatLogPath,
 		AgentSessionID:  agentSessionID,
 		Metadata: &RecordingMetadata{
@@ -6532,6 +6541,17 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 		log.Printf("Session %s: failed to send session_cred_state: %v", sess.UUID, err)
 	}
 
+	// Tell this client the per-file upload cap so the paperclip can refuse a
+	// too-large file before sending it (0 = no limit).
+	if err := conn.WriteJSON(map[string]interface{}{"type": "upload_limit", "maxBytes": sess.UploadMaxBytes}); err != nil {
+		log.Printf("Session %s: failed to send upload_limit: %v", sess.UUID, err)
+	}
+
+	// Streamed terminal upload in progress on this connection, if any
+	// (upload_limit.go). Abandoned files are deleted on disconnect.
+	upload := &uploadStream{maxBytes: sess.UploadMaxBytes}
+	defer upload.abort()
+
 	// Read from this WebSocket and write to PTY
 	// Message protocol:
 	// - Binary frames: terminal I/O
@@ -6558,6 +6578,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				UserName string          `json:"userName,omitempty"`
 				Text     string          `json:"text,omitempty"`
 				Name     string          `json:"name,omitempty"`
+				Filename string          `json:"filename,omitempty"`
+				Size     int64           `json:"size,omitempty"`
 			}
 			if err := json.Unmarshal(data, &msg); err != nil {
 				log.Printf("Invalid JSON message: %v", err)
@@ -6573,6 +6595,32 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				if err := conn.WriteJSON(response); err != nil {
 					log.Printf("Failed to send pong: %v", err)
 				}
+			case "upload_start":
+				filename := sanitizeFilename(msg.Filename)
+				if err := upload.start(sessionUploadsDir(sess), filename, msg.Size); err != nil {
+					log.Printf("Session %s: upload of %q (%d bytes) refused: %v", sess.UUID, msg.Filename, msg.Size, err)
+					sendFileUploadResponse(conn, false, filename, err.Error())
+					continue
+				}
+				if err := conn.WriteJSON(map[string]interface{}{"type": "upload_ready", "filename": filename}); err != nil {
+					log.Printf("Session %s: failed to send upload_ready: %v", sess.UUID, err)
+				}
+			case "upload_end":
+				name := upload.name
+				filePath, size, err := upload.finish()
+				if err != nil {
+					log.Printf("File upload error: %v", err)
+					sendFileUploadResponse(conn, false, name, err.Error())
+					continue
+				}
+				log.Printf("File uploaded: %s (%d bytes)", filePath, size)
+				sendFileUploadResponse(conn, true, name, "")
+				// Send the file path to PTY - the agent detects it and reads from disk
+				if err := sess.WriteInput([]byte(filePath)); err != nil {
+					log.Printf("PTY write error for uploaded file path: %v", err)
+				}
+			case "upload_cancel":
+				upload.abort()
 			case "chat":
 				// Handle incoming chat message
 				if msg.UserName != "" && msg.Text != "" {
@@ -6894,7 +6942,22 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 			continue
 		}
 
-		// Check for file upload message (0x01 prefix)
+		// Streamed upload chunk (0x03 prefix), see upload_limit.go.
+		if len(data) >= 1 && data[0] == opcodeUploadChunk {
+			if !upload.active() {
+				// Upload was refused or already failed; the error was reported.
+				continue
+			}
+			name := upload.name
+			if err := upload.write(data[1:]); err != nil {
+				log.Printf("File upload error: %v", err)
+				sendFileUploadResponse(conn, false, name, err.Error())
+			}
+			continue
+		}
+
+		// Check for file upload message (0x01 prefix). Legacy single-frame
+		// form, still accepted from pages loaded before streamed uploads.
 		// Format: [0x01, name_len_hi, name_len_lo, ...name_bytes, ...file_data]
 		if len(data) >= 3 && data[0] == 0x01 {
 			nameLen := int(data[1])<<8 | int(data[2])
@@ -6913,12 +6976,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, sessionUUID string)
 				continue
 			}
 
-			// Resolve uploads directory relative to session's working directory
-			baseDir := sess.WorkDir
-			if baseDir == "" {
-				baseDir, _ = os.Getwd()
+			if sess.UploadMaxBytes > 0 && int64(len(fileData)) > sess.UploadMaxBytes {
+				err := uploadTooLargeError(filename, int64(len(fileData)), sess.UploadMaxBytes)
+				log.Printf("File upload refused: %v", err)
+				sendFileUploadResponse(conn, false, filename, err.Error())
+				continue
 			}
-			uploadsDir := filepath.Join(baseDir, ".swe-swe", "uploads")
+
+			uploadsDir := sessionUploadsDir(sess)
 			if err := os.MkdirAll(uploadsDir, 0755); err != nil {
 				log.Printf("Failed to create uploads directory: %v", err)
 				sendFileUploadResponse(conn, false, filename, "Failed to create uploads directory")
@@ -7290,6 +7355,16 @@ func sanitizeFilename(name string) string {
 	}
 
 	return name
+}
+
+// sessionUploadsDir is where terminal uploads land: .swe-swe/uploads under the
+// session's working directory (server cwd when unset).
+func sessionUploadsDir(sess *Session) string {
+	baseDir := sess.WorkDir
+	if baseDir == "" {
+		baseDir, _ = os.Getwd()
+	}
+	return filepath.Join(baseDir, ".swe-swe", "uploads")
 }
 
 // sendFileUploadResponse sends a JSON response for file upload

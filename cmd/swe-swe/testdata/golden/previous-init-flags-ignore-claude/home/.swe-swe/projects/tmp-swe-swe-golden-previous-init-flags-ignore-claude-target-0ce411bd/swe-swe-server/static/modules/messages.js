@@ -8,6 +8,10 @@
 export const OPCODE_RESIZE = 0x00;
 export const OPCODE_FILE_UPLOAD = 0x01;
 export const OPCODE_CHUNK = 0x02;
+export const OPCODE_UPLOAD_CHUNK = 0x03;
+
+// Bytes per streamed upload chunk; the server writes each one straight to disk.
+export const UPLOAD_CHUNK_SIZE = 1024 * 1024;
 
 /**
  * Encode a terminal resize message.
@@ -44,6 +48,33 @@ export function encodeFileUpload(filename, data) {
     message.set(data, 3 + nameLen);
 
     return message;
+}
+
+/**
+ * Encode one piece of a streamed upload (announced by an upload_start JSON
+ * message, finished by upload_end).
+ * Format: [0x03, ...piece_bytes]
+ * @param {Uint8Array} data - The piece
+ * @returns {Uint8Array} Binary message
+ */
+export function encodeUploadChunk(data) {
+    const message = new Uint8Array(1 + data.length);
+    message[0] = OPCODE_UPLOAD_CHUNK;
+    message.set(data, 1);
+    return message;
+}
+
+/**
+ * Text shown when a file is over the upload limit, or null when it fits.
+ * @param {string} name - File name
+ * @param {number} size - File size in bytes
+ * @param {number} maxBytes - Limit in bytes (0 or missing = no limit)
+ * @param {function(number): string} formatSize - Byte formatter
+ * @returns {string|null}
+ */
+export function uploadTooLargeMessage(name, size, maxBytes, formatSize) {
+    if (!maxBytes || maxBytes <= 0 || size <= maxBytes) return null;
+    return `Too large: ${name} is ${formatSize(size)}; the upload limit is ${formatSize(maxBytes)}`;
 }
 
 /**

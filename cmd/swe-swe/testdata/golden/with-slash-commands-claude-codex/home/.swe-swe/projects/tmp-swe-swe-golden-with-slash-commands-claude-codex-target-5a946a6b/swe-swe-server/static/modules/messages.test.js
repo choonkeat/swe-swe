@@ -11,6 +11,9 @@ import {
     OPCODE_CHUNK,
     encodeResize,
     encodeFileUpload,
+    OPCODE_UPLOAD_CHUNK,
+    encodeUploadChunk,
+    uploadTooLargeMessage,
     isChunkMessage,
     decodeChunkHeader,
     parseServerMessage
@@ -245,4 +248,24 @@ test('parseServerMessage returns null for truncated JSON', () => {
 test('parseServerMessage handles unicode', () => {
     const result = parseServerMessage('{"name":"日本語"}');
     assert.deepStrictEqual(result, { name: '日本語' });
+});
+
+// Streamed upload tests
+test('encodeUploadChunk prefixes the piece with OPCODE_UPLOAD_CHUNK', () => {
+    const msg = encodeUploadChunk(new Uint8Array([7, 8, 9]));
+    assert.strictEqual(OPCODE_UPLOAD_CHUNK, 0x03);
+    assert.deepStrictEqual(Array.from(msg), [0x03, 7, 8, 9]);
+});
+
+test('uploadTooLargeMessage is null with no limit or when the file fits', () => {
+    const fmt = (n) => `${n}B`;
+    assert.strictEqual(uploadTooLargeMessage('a', 100, 0, fmt), null);
+    assert.strictEqual(uploadTooLargeMessage('a', 100, undefined, fmt), null);
+    assert.strictEqual(uploadTooLargeMessage('a', 100, 100, fmt), null);
+});
+
+test('uploadTooLargeMessage names the file, its size and the limit', () => {
+    const fmt = (n) => `${n}B`;
+    assert.strictEqual(uploadTooLargeMessage('big.zip', 101, 100, fmt),
+        'Too large: big.zip is 101B; the upload limit is 100B');
 });

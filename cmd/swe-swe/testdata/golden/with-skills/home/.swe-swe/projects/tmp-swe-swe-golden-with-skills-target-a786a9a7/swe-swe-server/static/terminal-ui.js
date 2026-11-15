@@ -5,7 +5,7 @@ import { getBaseUrl, buildShellUrl, buildPreviewUrl, buildProxyUrl, buildAgentCh
 import { makeProbe, proxyCandidates, resolveProxyBase } from './modules/proxy-base.js';
 import { agentViewKnown, agentViewLive, agentViewUnavailablePath, filesPaneKnown, previewRevealAction } from './modules/pane-availability.js';
 import { dedupePanesAcrossSlots } from './modules/slot-state.js';
-import { OPCODE_CHUNK, encodeResize, encodeFileUpload, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
+import { OPCODE_CHUNK, UPLOAD_CHUNK_SIZE, encodeResize, encodeUploadChunk, uploadTooLargeMessage, isChunkMessage, decodeChunkHeader, parseServerMessage } from './modules/messages.js';
 import { createReconnectState, getDelay, nextAttempt, resetAttempts, formatCountdown, probeUntilReady } from './modules/reconnect.js';
 import { createQueue, enqueue, dequeue, peek, isEmpty as isQueueEmpty, getQueueCount, getQueueInfo, startUploading, stopUploading, clearQueue } from './modules/upload-queue.js';
 import { createAssembler, addChunk, isComplete, getReceivedCount, assemble, reset as resetAssembler, getProgress } from './modules/chunk-assembler.js';
@@ -506,6 +506,10 @@ class TerminalUI extends HTMLElement {
         this.chatMessageTimeouts = [];
         // File upload queue (managed via upload-queue.js pure functions)
         this.uploadQueueState = createQueue();
+        // Per-file upload cap from the server's upload_limit message (0 = none)
+        this.uploadMaxBytes = 0;
+        // The streamed upload in flight: {name, failed, onReady} (see handleFile)
+        this._activeUpload = null;
         // Chunked snapshot reassembly (managed via chunk-assembler.js pure functions)
         this.chunkAssemblerState = createAssembler();
         // Debug mode from query string (accepts debug=true, debug=1, etc.)
@@ -2410,8 +2414,21 @@ class TerminalUI extends HTMLElement {
                     this.addChatMessage(msg.userName, msg.text, isOwn);
                 }
                 break;
+            case 'upload_limit':
+                this.uploadMaxBytes = typeof msg.maxBytes === 'number' ? msg.maxBytes : 0;
+                break;
+            case 'upload_ready':
+                if (this._activeUpload && this._activeUpload.onReady) {
+                    this._activeUpload.onReady(true);
+                }
+                break;
             case 'file_upload':
-                // File upload response
+                // File upload response. A failure also stops a streamed
+                // upload still sending (refused up front, or failed midway).
+                if (!msg.success && this._activeUpload) {
+                    this._activeUpload.failed = true;
+                    if (this._activeUpload.onReady) this._activeUpload.onReady(false);
+                }
                 if (msg.success) {
                     this.showStatusNotification(`Saved: ${msg.filename}`, 3000);
                 } else {
@@ -5853,6 +5870,12 @@ class TerminalUI extends HTMLElement {
             return;
         }
 
+        const tooLarge = uploadTooLargeMessage(file.name, file.size, this.uploadMaxBytes, formatFileSize);
+        if (tooLarge) {
+            this.showStatusNotification(tooLarge, 8000);
+            return;
+        }
+
         if (this.isTextFile(file)) {
             // Read and paste text directly to terminal
             const text = await this.readFileAsText(file);
@@ -5864,15 +5887,59 @@ class TerminalUI extends HTMLElement {
             this.ws.send(encoder.encode(text));
             this.showStatusNotification(`Pasted: ${file.name} (${formatFileSize(text.length)})`);
         } else {
-            // Binary file upload
-            const fileData = await this.readFileAsBinary(file);
-            if (fileData === null) {
-                this.showStatusNotification(`Error reading: ${file.name}`, 5000);
+            await this.streamUpload(file);
+        }
+    }
+
+    // Send a binary file as upload_start, 1 MB pieces, upload_end. The server
+    // writes each piece straight to disk and answers with file_upload.
+    async streamUpload(file) {
+        const ws = this.ws;
+        const upload = { name: file.name, failed: false, onReady: null };
+        this._activeUpload = upload;
+        try {
+            const ready = new Promise((resolve) => {
+                upload.onReady = resolve;
+                setTimeout(() => resolve(false), 30000);
+            });
+            ws.send(JSON.stringify({ type: 'upload_start', filename: file.name, size: file.size }));
+            if (!(await ready)) {
+                // Refused (the server's file_upload error is already shown) or no answer.
+                if (!upload.failed) this.showStatusNotification(`Upload failed: ${file.name} (no answer from server)`, 5000);
                 return;
             }
-            this.ws.send(encodeFileUpload(file.name, fileData));
+            upload.onReady = null;
+
+            for (let offset = 0; offset < file.size; offset += UPLOAD_CHUNK_SIZE) {
+                if (upload.failed) return;
+                if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) {
+                    this.showStatusNotification(`Upload failed: ${file.name} (connection lost)`, 5000);
+                    return;
+                }
+                const piece = new Uint8Array(await file.slice(offset, offset + UPLOAD_CHUNK_SIZE).arrayBuffer());
+                ws.send(encodeUploadChunk(piece));
+                // Keep at most ~8 MB waiting in the browser's send buffer.
+                while (ws.bufferedAmount > 8 * UPLOAD_CHUNK_SIZE && ws.readyState === WebSocket.OPEN && !upload.failed) {
+                    await new Promise(r => setTimeout(r, 50));
+                }
+                this.setUploadProgress(file.name, offset + piece.length, file.size);
+            }
+            if (upload.failed) return;
+            ws.send(JSON.stringify({ type: 'upload_end' }));
             this.showStatusNotification(`Uploaded: ${file.name} (${formatFileSize(file.size)}, temporary)`);
+        } catch (err) {
+            console.error('Upload error:', err);
+            this.showStatusNotification(`Upload failed: ${file.name} (${err && err.message ? err.message : 'error'})`, 5000);
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'upload_cancel' }));
+        } finally {
+            if (this._activeUpload === upload) this._activeUpload = null;
         }
+    }
+
+    setUploadProgress(name, sent, total) {
+        const el = this.querySelector('.terminal-ui__upload-filename');
+        if (!el || total <= 0) return;
+        el.textContent = `Uploading: ${name} (${Math.floor((sent / total) * 100)}%)`;
     }
 
     isTextFile(file) {
@@ -5883,15 +5950,6 @@ class TerminalUI extends HTMLElement {
         // Check extension
         const textExtensions = /\.(txt|md|js|ts|jsx|tsx|go|py|rb|rs|c|cpp|h|hpp|java|sh|bash|zsh|fish|json|yaml|yml|toml|xml|html|css|scss|sass|less|sql|graphql|proto|makefile|dockerfile|gitignore|env|conf|cfg|ini|log)$/i;
         return textExtensions.test(file.name);
-    }
-
-    readFileAsBinary(file) {
-        return new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(new Uint8Array(reader.result));
-            reader.onerror = () => resolve(null);
-            reader.readAsArrayBuffer(file);
-        });
     }
 
     readFileAsText(file) {
