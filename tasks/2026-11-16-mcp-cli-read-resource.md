@@ -1,6 +1,6 @@
 # Task: `mcp` CLI can list and read MCP resources (for MCP Apps pages)
 
-## Status: DONE -- Phases 1-4 complete (b79026114, 80ad322f8); e2e verified 2026-11-16
+## Status: Phases 1-5 DONE (Phase 5 uncommitted); swe-swe wiring of --advertise-ui NOT done (separate decision)
 
 Filed 2026-11-16 from the agent-chat `mcp-apps` branch discussion.
 
@@ -103,6 +103,13 @@ work in MCP-less mode at all; promote phase 3 from "investigate" to "implement
 `--advertise-ui`" (off by default, turned on by swe-swe only once agent-chat
 can display pages).
 
+**Reconciled with Phase 3/4 (2026-11-17):** both findings hold. Servers on
+ext-apps SDK defaults (`registerAppTool`, official examples) do NOT gate --
+Phase 4 got the page from `server-basic-vanillajs` with `capabilities:{}`.
+Servers that hand-roll the SHOULD check (agent-chat's sample in `--ui=auto`)
+DO hide. So `--advertise-ui` is needed for the gated subset, not for MCP Apps
+in general. Next swe-swe step: Phase 5 below.
+
 ## Review notes (2026-11-16)
 
 Verified: proxy forwards any method verbatim; both proxy and `cmd/mcp`
@@ -200,3 +207,37 @@ by the `mcp` binary built from 80ad322f8.
 Note: a call in the first ~1s after proxy start returns `mcp server
 restarting (code -32000)` while the node child boots -- pre-existing proxy
 behavior, not specific to resources.
+
+## Phase 5 (DONE, uncommitted): `mcp-cli-proxy --advertise-ui`
+
+From session 7953d892 (agent-chat `mcp-apps` plan): in `--without-mcp` mode
+the proxy already fronts every server, so it is the one place swe-swe can
+say "I can show pages" for gated servers.
+
+- Flag `--advertise-ui` on `mcp-cli-proxy`: when set, `startChild` sends
+  `capabilities.extensions["io.modelcontextprotocol/ui"] = {"mimeTypes":["text/html;profile=mcp-app"]}`.
+  Off by default.
+- Test: fake child records its initialize params; assert key present only
+  with the flag. Live: agent-chat `testdata/mcp-apps-sample --ui=auto` shows
+  a `page:` line only with the flag.
+- When swe-swe turns it on is a separate decision. Low risk either way: the
+  spec says UI tools "MUST return meaningful content array even when UI is
+  available", so a text-only agent still gets the text.
+- Estimate: about 1 hour.
+
+Result (2026-11-17): flag + tests landed; default handshake pinned
+byte-for-byte by TestInitializeRequestDefaultUnchanged. Live against
+agent-chat `testdata/mcp-apps-sample --ui=auto`: flag off -> sample logs
+`ui=false`, no `page:` line, `--read-resource` -> "does not serve
+resources"; flag on -> `ui=true`, `page:` line, page saved, content
+`_meta` printed as `[resource-meta ...] {"ui":{"prefersBorder":true}}`, and
+`show_calendar` still returns its text table (text fallback intact).
+Also: `mcp` help labels tools whose `_meta.ui.visibility` lacks "model" as
+`page-only:` (kept listed and callable, so a click relayed as a chat
+message can still be carried out).
+
+Out of scope here (noted by session 7953d892, worth its own task): the proxy
+drops server-initiated notifications and cannot relay server->client requests
+(elicitation, roots), and a server->client request id could be mistaken for a
+response. Harmless for tools-only use today; blocks using the proxy as a
+general pass-through.

@@ -296,3 +296,27 @@ func TestListResourcesServerWithoutResources(t *testing.T) {
 		t.Errorf("code=%d stderr=%q", code, errStr)
 	}
 }
+
+// TestServerHelpLabelsAppOnlyTools: a server told "I can show pages" may list
+// tools meant only for its page's buttons. They stay listed and callable (a
+// click relayed as a chat message is carried out by the agent) but carry a
+// label so the agent doesn't call them on its own.
+func TestServerHelpLabelsAppOnlyTools(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(`{"tools":[
+ {"name":"book","inputSchema":{"type":"object"},"_meta":{"ui":{"visibility":["app"]}}},
+ {"name":"both","inputSchema":{"type":"object"},"_meta":{"ui":{"visibility":["model","app"]}}},
+ {"name":"plain","inputSchema":{"type":"object"}}]}`)
+	})
+	out, _, code := runCapture(t, dir, "svc", "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	if strings.Count(out, "page-only:") != 1 {
+		t.Fatalf("want exactly 1 page-only label:\n%s", out)
+	}
+	book := out[strings.Index(out, "mcp svc book"):strings.Index(out, "mcp svc both")]
+	if !strings.Contains(book, "page-only:") {
+		t.Errorf("label not on book:\n%s", out)
+	}
+}

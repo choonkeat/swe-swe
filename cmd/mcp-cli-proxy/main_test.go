@@ -69,6 +69,9 @@ func handle(line []byte) {
 	id := m["id"]
 	switch method {
 	case "initialize":
+		if path := os.Getenv("INIT_LOG"); path != "" {
+			os.WriteFile(path, m["params"], 0644)
+		}
 		emit(fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"serverInfo\":{\"name\":\"fake\",\"version\":\"1\"}}}\n", id))
 	case "notifications/initialized":
 	case "notifications/cancelled":

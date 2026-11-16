@@ -79,8 +79,25 @@ type tool struct {
 type toolMeta struct {
 	UI struct {
 		ResourceURI string `json:"resourceUri"`
+		// Visibility lists who may call the tool: "model" (the agent) and/or
+		// "app" (its page). Absent means both.
+		Visibility []string `json:"visibility"`
 	} `json:"ui"`
 	FlatResourceURI string `json:"ui/resourceUri"`
+}
+
+// appOnly reports a tool its server meant for its page's buttons, not for the
+// agent to call on its own (_meta.ui.visibility without "model").
+func (t tool) appOnly() bool {
+	if len(t.Meta.UI.Visibility) == 0 {
+		return false
+	}
+	for _, v := range t.Meta.UI.Visibility {
+		if v == "model" {
+			return false
+		}
+	}
+	return true
 }
 
 func (t tool) pageURI() string {
@@ -919,6 +936,9 @@ func printToolHelp(server string, t tool, out *os.File) {
 	}
 	if uri := t.pageURI(); uri != "" {
 		fmt.Fprintf(out, "page: %s  (mcp %s --read-resource %s)\n", uri, server, uri)
+	}
+	if t.appOnly() {
+		fmt.Fprintf(out, "page-only: meant for its page's buttons; call it only to carry out a click the user made in that page\n")
 	}
 	if t.Description != "" {
 		fmt.Fprintf(out, "\n%s\n", t.Description)

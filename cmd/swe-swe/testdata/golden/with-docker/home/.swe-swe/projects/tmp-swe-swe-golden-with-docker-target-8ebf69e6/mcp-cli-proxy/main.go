@@ -26,6 +26,9 @@
 //	mcp-cli-proxy --name swe-swe-agent-chat \
 //	  --socket /workspace/.swe-swe/run/mcp/swe-swe-agent-chat.sock \
 //	  -- sh -c 'exec swe-npx -y @choonkeat/agent-chat ...'
+//
+// --advertise-ui declares MCP Apps (SEP-1865) support in the handshake, for
+// servers that hide UI tools/pages from clients that don't. Off by default.
 package main
 
 import (
@@ -62,7 +65,43 @@ type config struct {
 	// these the proxy emits an immediate notifications/message frame so the
 	// client can surface the wait; the fleet launcher declares which they are.
 	blockingTools map[string]bool
-	command       []string
+	// advertiseUI makes the initialize handshake declare MCP Apps support
+	// (SEP-1865), so servers that follow the spec's "SHOULD check client
+	// capabilities" rule expose their UI tools and pages. Off by default:
+	// without it the handshake is byte-for-byte what it always was, and
+	// swe-swe turns it on only where something can actually show a page.
+	advertiseUI bool
+	command     []string
+}
+
+// uiExtensionID and uiMimeType are the MCP Apps capability the client
+// advertises: capabilities.extensions["io.modelcontextprotocol/ui"].
+const (
+	uiExtensionID = "io.modelcontextprotocol/ui"
+	uiMimeType    = "text/html;profile=mcp-app"
+)
+
+// initializeRequest builds the handshake the proxy sends its child.
+func initializeRequest(cfg config) []byte {
+	if !cfg.advertiseUI {
+		return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"mcp-cli-proxy","version":"1"}}}`, cfg.protocolVersion))
+	}
+	req := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      0,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": cfg.protocolVersion,
+			"capabilities": map[string]any{
+				"extensions": map[string]any{
+					uiExtensionID: map[string]any{"mimeTypes": []string{uiMimeType}},
+				},
+			},
+			"clientInfo": map[string]any{"name": "mcp-cli-proxy", "version": "1"},
+		},
+	}
+	b, _ := json.Marshal(req)
+	return b
 }
 
 func parseArgs(args []string) (config, error) {
@@ -110,6 +149,8 @@ func parseArgs(args []string) (config, error) {
 					cfg.blockingTools[name] = true
 				}
 			}
+		case "--advertise-ui":
+			cfg.advertiseUI = true
 		case "--":
 			cfg.command = args[i+1:]
 			if len(cfg.command) == 0 {
@@ -408,8 +449,7 @@ func (p *proxy) startChild() (*child, error) {
 	reader.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 
 	// Handshake: initialize request, await response, then initialized notice.
-	initReq := fmt.Sprintf(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":%q,"capabilities":{},"clientInfo":{"name":"mcp-cli-proxy","version":"1"}}}`, p.cfg.protocolVersion)
-	if err := c.writeLine([]byte(initReq)); err != nil {
+	if err := c.writeLine(initializeRequest(p.cfg)); err != nil {
 		cmd.Process.Kill()
 		cmd.Wait()
 		return nil, fmt.Errorf("send initialize: %w", err)
@@ -562,7 +602,7 @@ func main() {
 	cfg, err := parseArgs(os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mcp-cli-proxy: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Usage: mcp-cli-proxy --name NAME --socket PATH [--protocol-version V] [--max-restarts N] [--blocking-tools NAME,NAME] -- COMMAND [ARGS...]\n")
+		fmt.Fprintf(os.Stderr, "Usage: mcp-cli-proxy --name NAME --socket PATH [--protocol-version V] [--max-restarts N] [--blocking-tools NAME,NAME] [--advertise-ui] -- COMMAND [ARGS...]\n")
 		os.Exit(1)
 	}
 	if cfg.name == "" || cfg.socketPath == "" {
