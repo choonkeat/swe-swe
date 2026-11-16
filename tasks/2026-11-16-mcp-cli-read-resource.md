@@ -1,6 +1,6 @@
 # Task: `mcp` CLI can list and read MCP resources (for MCP Apps pages)
 
-## Status: IN PROGRESS -- Phase 3 findings recorded; Phase 1 implemented (uncommitted)
+## Status: IN PROGRESS -- Phases 1-3 done (Phase 1 = b79026114; Phase 2 uncommitted); Phase 4 e2e pending
 
 Filed 2026-11-16 from the agent-chat `mcp-apps` branch discussion.
 

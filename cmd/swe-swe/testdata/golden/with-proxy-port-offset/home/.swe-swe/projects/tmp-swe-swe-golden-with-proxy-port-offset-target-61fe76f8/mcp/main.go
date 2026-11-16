@@ -11,6 +11,8 @@
 //	mcp <server>                full docs for every tool (what native MCP injects)
 //	mcp <server> <tool> -h      full docs for one tool (from its JSON Schema)
 //	mcp <server> <tool> [flags] call the tool; print its result
+//	mcp <server> --list-resources
+//	                            resources/list + resources/templates/list
 //	mcp <server> --read-resource <uri> [--stdout]
 //	                            resources/read; save contents to a file
 //
@@ -68,6 +70,24 @@ type tool struct {
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"`
 	Annotations toolAnnotations `json:"annotations"`
+	Meta        toolMeta        `json:"_meta"`
+}
+
+// toolMeta is the slice of a tool's _meta that `mcp` surfaces: the MCP Apps
+// (SEP-1865) page a tool declares. `ui.resourceUri` is current; the flat
+// "ui/resourceUri" key is the deprecated form, still read for older servers.
+type toolMeta struct {
+	UI struct {
+		ResourceURI string `json:"resourceUri"`
+	} `json:"ui"`
+	FlatResourceURI string `json:"ui/resourceUri"`
+}
+
+func (t tool) pageURI() string {
+	if t.Meta.UI.ResourceURI != "" {
+		return t.Meta.UI.ResourceURI
+	}
+	return t.Meta.FlatResourceURI
 }
 
 // toolAnnotations are the MCP tool annotations a native client would surface
@@ -159,6 +179,21 @@ func rpc(conn net.Conn, method string, params any) (json.RawMessage, error) {
 		return nil, err
 	}
 	return nil, fmt.Errorf("no response from server")
+}
+
+// rpcOnce dials server, sends one request, and closes the connection.
+func rpcOnce(server, method string, params any) (json.RawMessage, error) {
+	conn, err := dial(server)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return rpc(conn, method, params)
+}
+
+func isMethodNotFound(err error) bool {
+	var re *rpcError
+	return errors.As(err, &re) && re.Code == rpcMethodNotFound
 }
 
 func listTools(server string) ([]tool, error) {
@@ -551,16 +586,9 @@ func runReadResource(server string, rest []string, out, errOut *os.File) int {
 		return 1
 	}
 
-	conn, err := dial(server)
+	raw, err := rpcOnce(server, "resources/read", map[string]any{"uri": uri})
 	if err != nil {
-		fmt.Fprintf(errOut, "mcp: %v\n", err)
-		return 1
-	}
-	defer conn.Close()
-	raw, err := rpc(conn, "resources/read", map[string]any{"uri": uri})
-	if err != nil {
-		var re *rpcError
-		if errors.As(err, &re) && re.Code == rpcMethodNotFound {
+		if isMethodNotFound(err) {
 			fmt.Fprintf(errOut, "mcp: %s does not serve resources\n", server)
 		} else {
 			fmt.Fprintf(errOut, "mcp: %v\n", err)
@@ -634,17 +662,132 @@ func runReadResource(server string, rest []string, out, errOut *os.File) int {
 			fmt.Fprintf(out, "[resource %s %s saved to %s]\n", cURI, c.MimeType, f.Name())
 		}
 
-		if m := strings.TrimSpace(string(c.Meta)); m != "" && m != "null" && m != "{}" {
-			var compact strings.Builder
-			if b, err := json.Marshal(json.RawMessage(c.Meta)); err == nil {
-				compact.Write(b)
-			} else {
-				compact.WriteString(m)
-			}
-			fmt.Fprintf(metaOut, "[resource-meta %s] %s\n", cURI, compact.String())
+		if m := compactMeta(c.Meta); m != "" {
+			fmt.Fprintf(metaOut, "[resource-meta %s] %s\n", cURI, m)
 		}
 	}
 	return code
+}
+
+// compactMeta renders a _meta value as one JSON line, or "" when absent/empty.
+func compactMeta(raw json.RawMessage) string {
+	m := strings.TrimSpace(string(raw))
+	if m == "" || m == "null" || m == "{}" {
+		return ""
+	}
+	if b, err := json.Marshal(json.RawMessage(raw)); err == nil {
+		return string(b)
+	}
+	return m
+}
+
+type resourceEntry struct {
+	URI         string          `json:"uri"`
+	URITemplate string          `json:"uriTemplate"`
+	Name        string          `json:"name"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	MimeType    string          `json:"mimeType"`
+	Meta        json.RawMessage `json:"_meta"`
+}
+
+// listPaged calls a paginated list method (resources/list,
+// resources/templates/list), following nextCursor, and returns the entries
+// under key.
+func listPaged(server, method, key string) ([]resourceEntry, error) {
+	var all []resourceEntry
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		raw, err := rpcOnce(server, method, params)
+		if err != nil {
+			return nil, err
+		}
+		var r map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", method, err)
+		}
+		var entries []resourceEntry
+		if len(r[key]) > 0 {
+			if err := json.Unmarshal(r[key], &entries); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", method, err)
+			}
+		}
+		all = append(all, entries...)
+		cursor = ""
+		if len(r["nextCursor"]) > 0 {
+			json.Unmarshal(r["nextCursor"], &cursor)
+		}
+		if cursor == "" {
+			break
+		}
+	}
+	return all, nil
+}
+
+func printResourceEntry(out *os.File, id string, e resourceEntry) {
+	label := e.Title
+	if label == "" {
+		label = e.Name
+	}
+	fmt.Fprintf(out, "%s", id)
+	for _, f := range []string{e.MimeType, label} {
+		if f != "" {
+			fmt.Fprintf(out, "  %s", f)
+		}
+	}
+	fmt.Fprintln(out)
+	if e.Description != "" {
+		for _, l := range strings.Split(strings.TrimRight(e.Description, "\n"), "\n") {
+			fmt.Fprintf(out, "    %s\n", l)
+		}
+	}
+	if m := compactMeta(e.Meta); m != "" {
+		fmt.Fprintf(out, "    meta: %s\n", m)
+	}
+}
+
+// runListResources implements `mcp <server> --list-resources`: resources/list
+// plus resources/templates/list. A server without resources/list fails
+// (exit 1); one that lists resources but not templates just gets a note.
+func runListResources(server string, rest []string, out, errOut *os.File) int {
+	if len(rest) > 0 {
+		fmt.Fprintf(errOut, "mcp: unexpected argument %q (usage: mcp %s --list-resources)\n", rest[0], server)
+		return 1
+	}
+	resources, err := listPaged(server, "resources/list", "resources")
+	if err != nil {
+		if isMethodNotFound(err) {
+			fmt.Fprintf(errOut, "mcp: %s does not serve resources\n", server)
+		} else {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+		}
+		return 1
+	}
+	if len(resources) == 0 {
+		fmt.Fprintln(out, "(no resources)")
+	}
+	for _, e := range resources {
+		printResourceEntry(out, e.URI, e)
+	}
+
+	templates, err := listPaged(server, "resources/templates/list", "resourceTemplates")
+	switch {
+	case isMethodNotFound(err):
+		fmt.Fprintf(out, "\n(%s does not list resource templates)\n", server)
+	case err != nil:
+		fmt.Fprintf(errOut, "mcp: resources/templates/list: %v\n", err)
+	case len(templates) > 0:
+		fmt.Fprintf(out, "\nTemplates (fill in {params}, then --read-resource):\n")
+		for _, e := range templates {
+			printResourceEntry(out, e.URITemplate, e)
+		}
+	}
+	fmt.Fprintf(out, "\nRead one: mcp %s --read-resource <uri> [--stdout]\n", server)
+	return 0
 }
 
 // --- help ---------------------------------------------------------------------
@@ -672,6 +815,14 @@ Usage:
   mcp -h                        full docs for every server and tool (above)
   mcp <server>                  full docs for one server's tools
   mcp <server> <tool> -h        full docs for one tool
+  mcp <server> --list-resources list the server's MCP resources (+ templates)
+  mcp <server> --read-resource <uri> [--stdout]
+                                read a resource; saves each content entry to a
+                                file and prints its path (--stdout: print text)
+
+A tool whose docs show "page: <uri>" declares an MCP Apps page; fetch it with
+--read-resource. Content _meta (CSP/permission hints) prints as one line:
+  [resource-meta <uri>] {...}
 
 Global flags:
   --remind-help-text-throttle duration
@@ -765,6 +916,9 @@ func printToolHelp(server string, t tool, out *os.File) {
 	fmt.Fprintf(out, "mcp %s %s [flags]\n", server, t.Name)
 	if line := annotationLine(t); line != "" {
 		fmt.Fprintf(out, "%s\n", line)
+	}
+	if uri := t.pageURI(); uri != "" {
+		fmt.Fprintf(out, "page: %s  (mcp %s --read-resource %s)\n", uri, server, uri)
 	}
 	if t.Description != "" {
 		fmt.Fprintf(out, "\n%s\n", t.Description)
@@ -895,6 +1049,7 @@ func run(args []string, out, errOut *os.File) int {
 			fmt.Fprintf(errOut, "mcp: %v\n", err)
 			return 1
 		}
+		fmt.Fprintf(out, "\n---\n\nResources (if %s serves any): mcp %s --list-resources | --read-resource <uri> [--stdout]\n", server, server)
 		return 0
 	}
 	toolName := args[1]
@@ -906,6 +1061,8 @@ func run(args []string, out, errOut *os.File) int {
 		switch toolName {
 		case "--read-resource":
 			return runReadResource(server, rest, out, errOut)
+		case "--list-resources":
+			return runListResources(server, rest, out, errOut)
 		default:
 			fmt.Fprintf(errOut, "mcp: unknown option %q (run: mcp -h)\n", toolName)
 			return 1

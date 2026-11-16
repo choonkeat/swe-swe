@@ -184,3 +184,115 @@ func TestFileSafeAndExt(t *testing.T) {
 		t.Error("separator survived")
 	}
 }
+
+const appToolsList = `{"tools":[
+ {"name":"show_calendar","description":"Show a calendar.","inputSchema":{"type":"object"},"_meta":{"ui":{"resourceUri":"ui://calendar/view.html"}}},
+ {"name":"legacy","description":"Old key.","inputSchema":{"type":"object"},"_meta":{"ui/resourceUri":"ui://legacy/page.html"}},
+ {"name":"plain","description":"No page.","inputSchema":{"type":"object"}}]}`
+
+// TestServerHelpShowsPageLines proves tools declaring an MCP Apps page (both
+// the current and the deprecated _meta key) get a `page:` line with the exact
+// --read-resource command, and the standalone server help advertises the
+// resource options.
+func TestServerHelpShowsPageLines(t *testing.T) {
+	dir := fakeSocketServer(t, "svc", func(method string, params json.RawMessage) json.RawMessage {
+		return json.RawMessage(appToolsList)
+	})
+	out, _, code := runCapture(t, dir, "svc", "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{
+		"page: ui://calendar/view.html  (mcp svc --read-resource ui://calendar/view.html)",
+		"page: ui://legacy/page.html  (mcp svc --read-resource ui://legacy/page.html)",
+		"mcp svc --list-resources | --read-resource <uri>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "page: ") != 2 {
+		t.Errorf("want exactly 2 page lines:\n%s", out)
+	}
+}
+
+// TestTopHelpDocumentsResourceFlags is the discoverability contract:
+// agent-chat's instructions say "if `mcp -h` lists --read-resource, use it".
+func TestTopHelpDocumentsResourceFlags(t *testing.T) {
+	out, _, code := runCapture(t, t.TempDir(), "-h")
+	if code != 0 {
+		t.Fatal(code)
+	}
+	for _, want := range []string{"--read-resource <uri>", "--list-resources", "[resource-meta <uri>]", `"page: <uri>"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("top help missing %q", want)
+		}
+	}
+}
+
+func TestListResources(t *testing.T) {
+	var cursors []string
+	dir := fakeSocketServerRPC(t, "svc", func(method string, params json.RawMessage) (json.RawMessage, *rpcError) {
+		switch method {
+		case "resources/list":
+			var p struct {
+				Cursor string `json:"cursor"`
+			}
+			json.Unmarshal(params, &p)
+			cursors = append(cursors, p.Cursor)
+			if p.Cursor == "" {
+				return json.RawMessage(`{"resources":[{"uri":"ui://calendar/view.html","name":"calendar","mimeType":"text/html;profile=mcp-app","description":"Calendar view","_meta":{"ui":{"prefersBorder":true}}}],"nextCursor":"p2"}`), nil
+			}
+			return json.RawMessage(`{"resources":[{"uri":"file:///notes.txt","name":"notes","mimeType":"text/plain"}]}`), nil
+		case "resources/templates/list":
+			return json.RawMessage(`{"resourceTemplates":[{"uriTemplate":"file:///{path}","name":"files"}]}`), nil
+		}
+		return nil, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}
+	})
+	out, errStr, code := runCapture(t, dir, "svc", "--list-resources")
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%s", code, errStr)
+	}
+	if len(cursors) != 2 || cursors[1] != "p2" {
+		t.Errorf("pagination cursors=%v", cursors)
+	}
+	for _, want := range []string{
+		"ui://calendar/view.html  text/html;profile=mcp-app  calendar",
+		"    Calendar view",
+		`    meta: {"ui":{"prefersBorder":true}}`,
+		"file:///notes.txt  text/plain  notes",
+		"Templates (",
+		"file:///{path}  files",
+		"Read one: mcp svc --read-resource <uri>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
+
+func TestListResourcesWithoutTemplates(t *testing.T) {
+	dir := fakeSocketServerRPC(t, "svc", func(method string, params json.RawMessage) (json.RawMessage, *rpcError) {
+		if method == "resources/list" {
+			return json.RawMessage(`{"resources":[]}`), nil
+		}
+		return nil, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}
+	})
+	out, errStr, code := runCapture(t, dir, "svc", "--list-resources")
+	if code != 0 {
+		t.Fatalf("exit %d stderr=%s", code, errStr)
+	}
+	if !strings.Contains(out, "(no resources)") || !strings.Contains(out, "does not list resource templates") {
+		t.Errorf("out=%q", out)
+	}
+}
+
+func TestListResourcesServerWithoutResources(t *testing.T) {
+	dir := fakeSocketServerRPC(t, "svc", func(method string, params json.RawMessage) (json.RawMessage, *rpcError) {
+		return nil, &rpcError{Code: rpcMethodNotFound, Message: "Method not found"}
+	})
+	_, errStr, code := runCapture(t, dir, "svc", "--list-resources")
+	if code != 1 || strings.TrimSpace(errStr) != "mcp: svc does not serve resources" {
+		t.Errorf("code=%d stderr=%q", code, errStr)
+	}
+}
