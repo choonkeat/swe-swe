@@ -1,6 +1,6 @@
 # Task: `mcp` CLI can list and read MCP resources (for MCP Apps pages)
 
-## Status: IN PROGRESS -- Phases 1-3 done (Phase 1 = b79026114; Phase 2 uncommitted); Phase 4 e2e pending
+## Status: DONE -- Phases 1-4 complete (b79026114, 80ad322f8); e2e verified 2026-11-16
 
 Filed 2026-11-16 from the agent-chat `mcp-apps` branch discussion.
 
@@ -176,3 +176,27 @@ Spec details that change Phases 1-2:
   page buttons can call tools directly. That's a larger, separate decision;
   agent-chat's interim plan is that a button click arrives as a chat message
   and the agent calls the tool itself.
+
+## Phase 4 result (2026-11-16) -- PASS
+
+Real wire path, no fakes: `mcp-cli-proxy --name basic -- node
+@modelcontextprotocol/server-basic-vanillajs@2.0.4 --stdio` (official
+ext-apps example, SDK defaults, proxy still sends `capabilities:{}`), driven
+by the `mcp` binary built from 80ad322f8.
+
+- `mcp basic -h` shows `page: ui://get-time/mcp-app.html  (mcp basic
+  --read-resource ui://get-time/mcp-app.html)` -- confirms the Phase 3
+  finding: no capability advertisement needed for SDK-default servers.
+- `--list-resources` lists the page with `text/html;profile=mcp-app`.
+- `--read-resource` saved a 243,831-byte `.html` file (bundled JS) --
+  confirms file-by-default over stdout. `--stdout` emits the same bytes.
+- Unknown URI -> `mcp: Resource not found: ui://nope (code -32602)`, exit 1.
+- Old `mcp` (built from 4fc2026db): `--read-resource` fails cleanly with
+  `has no tool "--read-resource"`, exit 1; its `-h` never mentions the flag,
+  so agent-chat's feature detection correctly reads "not available".
+- Not exercised live: content `_meta` passthrough (this example sends none;
+  covered by TestReadResourceMetaPassthrough).
+
+Note: a call in the first ~1s after proxy start returns `mcp server
+restarting (code -32000)` while the node child boots -- pre-existing proxy
+behavior, not specific to resources.
