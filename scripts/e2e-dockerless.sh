@@ -121,17 +121,24 @@ if [ "${E2E_POISON_NODE:-}" = "1" ]; then
     SERVER_PATH="$POISON:$PATH"
     echo "  node/npx/npm masked for the server process"
 fi
-# Clean env: drop any ambient tunnel/auth from the host; pick high,
-# unlikely-to-collide port ranges so a stray neighbour does not clash.
+# Clean env: drop any ambient tunnel/auth from the host; pick port ranges a
+# neighbour is unlikely to hold. Every port the server binds must stay BELOW
+# the kernel's ephemeral range (32768-60999 by default): the OS hands those
+# out as the local end of outgoing connections, so on a busy host a listener
+# there fails at random with "address already in use". (The old 41000 base
+# put md-serve on 47000 -- files = preview+6000 -- which a long-lived
+# outgoing connection held, failing the Files-tab specs every run.)
+# Bound here: 11000-11459 (incl. internal CDP/VNC offsets), proxies at
+# +1000 = 12000-12419, files 17000-17019, files proxy 18000-18019.
 # `swe-swe up` locates the project by CWD, so launch from inside it.
 ( cd "$PROJ" && exec env \
     -u SWE_TUNNEL_SERVER_URL -u SWE_TUNNEL_UNIQUE -u SWE_TUNNEL_BIN -u SWE_TUNNEL_CLIENT_CERT \
     -u SWE_SWE_PASSWORD \
     PATH="$SERVER_PATH" \
     HOME="$HOME_DIR" SWE_PORT="$E2E_PORT" \
-    SWE_PREVIEW_PORTS=41000-41019 SWE_AGENT_CHAT_PORTS=41100-41119 \
-    SWE_PUBLIC_PORTS=41200-41219 SWE_CDP_PORTS=41300-41319 SWE_VNC_PORTS=41400-41419 \
-    SWE_PROXY_PORT_OFFSET=10000 \
+    SWE_PREVIEW_PORTS=11000-11019 SWE_AGENT_CHAT_PORTS=11100-11119 \
+    SWE_PUBLIC_PORTS=11200-11219 SWE_CDP_PORTS=11300-11319 SWE_VNC_PORTS=11400-11419 \
+    SWE_PROXY_PORT_OFFSET=1000 \
     "$CLI" up ) > "$TEST_DIR/up.log" 2>&1 &
 SERVER_PID=$!
 
@@ -159,7 +166,7 @@ fi
 echo "=== Phase 5: assert tab-serving endpoints ==="
 # Homepage identifies as swe-swe.
 HOMEPAGE="$(curl -s "http://127.0.0.1:$E2E_PORT/")"
-if echo "$HOMEPAGE" | grep -q '<title>swe-swe</title>'; then
+if grep -q '<title>swe-swe</title>' <<<"$HOMEPAGE"; then
     pass "homepage is swe-swe"
 else
     fail "homepage title wrong; body head: $(echo "$HOMEPAGE" | head -c 200 | tr '\n' ' ')"
@@ -169,9 +176,9 @@ fi
 # (proves the path-agnostic server: Agent Terminal/Terminal/Preview/Files/Chat
 # all hang off this page + per-session env).
 SESS="$(curl -s "http://127.0.0.1:$E2E_PORT/session/$UUID?assistant=shell")"
-echo "$SESS" | grep -q '<terminal-ui' && pass "session page renders terminal-ui" || fail "session page missing terminal-ui"
-echo "$SESS" | grep -qF "data-where-key=\"$PROJ\"" && pass "session rooted at project dir (path-agnostic)" || fail "session not rooted at project dir"
-echo "$SESS" | grep -q '/terminal-ui.js' && pass "session loads terminal-ui.js bundle" || fail "terminal-ui.js not referenced"
+grep -q '<terminal-ui' <<<"$SESS" && pass "session page renders terminal-ui" || fail "session page missing terminal-ui"
+grep -qF "data-where-key=\"$PROJ\"" <<<"$SESS" && pass "session rooted at project dir (path-agnostic)" || fail "session not rooted at project dir"
+grep -q '/terminal-ui.js' <<<"$SESS" && pass "session loads terminal-ui.js bundle" || fail "terminal-ui.js not referenced"
 
 # Files tab backend (md-serve via swe-npx) only spawns when a REAL session is
 # created (WS connect), which happens in the Playwright phase below -- a bare

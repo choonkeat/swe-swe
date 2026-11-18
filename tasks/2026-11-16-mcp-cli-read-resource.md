@@ -285,7 +285,12 @@ init.json, restored on `--previous-init-flags=reuse`.
   ./scripts/e2e-dockerless.sh`: real `swe-swe up` + browser sessions; all 32
   proxy starts logged `advertise-ui`, and the MCP-less specs (agent reaches
   tools through `mcp`) pass with it on. Control run without E2E_MCP_APPS:
-  0 of 28 carry it. Both runs share the same unrelated failures (homepage
-  title grep, Files-tab md-serve theme-cookie spec), so they predate this.
+  0 of 28 carry it. Both runs shared two older failures, both fixed in the
+  e2e script afterwards: the homepage check piped a large page into
+  `grep -q` under pipefail (early exit -> SIGPIPE 141 -> false fail; now a
+  here-string), and the test's port ranges sat inside the kernel ephemeral
+  range, so md-serve's 47000 was held by an outgoing connection (now
+  11000-18019). After the fix: full PASS with the flag on (24/24) and off
+  (0/24).
 - Left: native-MCP mode via `agent-chat wrap`, under the Wrap safety rules
   above, once agent-chat releases `wrap` (now only on its `mcp-apps` branch).
