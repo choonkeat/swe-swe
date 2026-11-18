@@ -294,3 +294,41 @@ init.json, restored on `--previous-init-flags=reuse`.
   (0/24).
 - Left: native-MCP mode via `agent-chat wrap`, under the Wrap safety rules
   above, once agent-chat releases `wrap` (now only on its `mcp-apps` branch).
+
+## Plan: normal (native-MCP) sessions (decided 2026-11-19: docs only, after agent-chat ships wrap)
+
+Finding that reshapes this step: the servers swe-swe configures (agent-chat,
+playwright, preview, swe-swe) serve NO MCP Apps pages. Pages come from
+servers the USER adds (`claude mcp add ...`), which swe-swe never touches --
+and which the MCP-less fleet does not run at all (`mcpLessProxySpecs` is the
+fixed 4). So 7cdedb2c5 today advertises UI only to servers with no pages:
+harmless, no visible benefit yet. Wrapping swe-swe's own 4 servers in native
+mode would add risk (Wrap safety) for zero pages -- don't.
+
+What actually reaches page-serving servers, cheapest first:
+
+1. **Docs only (recommended first).** Once agent-chat ships `wrap`, a user
+   wraps their own server themselves:
+   `claude mcp add cal -- swe-npx -y @choonkeat/agent-chat wrap -- node cal.js`.
+   swe-swe changes nothing; the user opts in per server, so a broken `wrap`
+   can only take down that one server. About 30 minutes (docs/ page +
+   one live check with agent-chat's sample).
+2. **swe-swe-managed page servers (`--with-mcp-server`), if 1 proves too
+   fiddly.** A user lists extra servers once in swe-swe (init flag or
+   `.swe-swe/mcp-servers.json`); swe-swe adds them to every agent's config
+   and, with `--with-mcp-apps`, runs them behind `agent-chat wrap` (native)
+   or in the proxy fleet with `--advertise-ui` (MCP-less -- which also makes
+   user servers usable in MCP-less mode for the first time). Must follow the
+   4 Wrap safety rules: probe `agent-chat -h` for "agent-chat wrap" THEN
+   `agent-chat wrap --version` (an old agent-chat ignores the word "wrap" and
+   starts a whole chat server), resolve once, fail open, `SWE_SWE_NO_WRAP=1`.
+   About 1-2 days: init flag (2-commit TDD), entrypoint + host_agent_config
+   wiring for 7 agents, fleet specs, probe, e2e.
+
+**Decision (2026-11-19): option 1 only.** Option 2 is dropped; users wrap
+their own page servers. swe-swe keeps `--with-mcp-apps` as is (harmless, no
+visible effect until a page server sits behind the fleet).
+
+Blocked on: agent-chat releasing `wrap` (on its `mcp-apps` branch, b233268).
+Do the docs page AFTER that release, so it never names a command users can't
+run yet; include the agent-chat version that first has `wrap`.
