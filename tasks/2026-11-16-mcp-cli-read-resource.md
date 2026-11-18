@@ -1,6 +1,6 @@
 # Task: `mcp` CLI can list and read MCP resources (for MCP Apps pages)
 
-## Status: Phases 1-5 DONE (Phase 5 uncommitted); swe-swe wiring of --advertise-ui NOT done (separate decision)
+## Status: Phases 1-5 DONE; `init --with-mcp-apps` wired for --without-mcp (native-MCP wiring waits on agent-chat `wrap` release)
 
 Filed 2026-11-16 from the agent-chat `mcp-apps` branch discussion.
 
@@ -208,7 +208,7 @@ Note: a call in the first ~1s after proxy start returns `mcp server
 restarting (code -32000)` while the node child boots -- pre-existing proxy
 behavior, not specific to resources.
 
-## Phase 5 (DONE, uncommitted): `mcp-cli-proxy --advertise-ui`
+## Phase 5 (DONE, 74afcb26b): `mcp-cli-proxy --advertise-ui`
 
 From session 7953d892 (agent-chat `mcp-apps` plan): in `--without-mcp` mode
 the proxy already fronts every server, so it is the one place swe-swe can
@@ -265,3 +265,23 @@ wraps anything, all four must hold:
 Scope: only servers swe-swe configures; user-added servers stay untouched.
 This is the version-compat rule applied to swe-swe: use an agent-chat
 feature only after checking it is there.
+
+## `swe-swe init --with-mcp-apps` (2026-11-18)
+
+Decision: the operator opts in at init; swe-swe never guesses whether
+agent-chat is new enough. Off by default, saved as `withMCPApps` in
+init.json, restored on `--previous-init-flags=reuse`.
+
+- Baseline fb1adb13a: flag parsed + saved, no effect (golden variant
+  `with-mcp-apps` differs from `default` only in init.json).
+- Wiring: with `--without-mcp`, `swe-swe up` exports `SWE_MCP_APPS=1`
+  (only alongside `SWE_MCP_LESS=1`); swe-swe-server's `proxyArgs` adds
+  `--advertise-ui` to every mcp-cli-proxy. Without `--without-mcp`, init
+  keeps the setting but prints a stderr note that it does nothing yet.
+- Verified: unit tests for each hop (init.json round-trip, up env, proxy
+  args on/off byte-for-byte); live `init --runtime=host --without-mcp
+  --with-mcp-apps` writes both fields with no note. Not run live: a full
+  `swe-swe up` + session; the proxy's `--advertise-ui` itself was live-tested
+  in Phase 5.
+- Left: native-MCP mode via `agent-chat wrap`, under the Wrap safety rules
+  above, once agent-chat releases `wrap` (now only on its `mcp-apps` branch).

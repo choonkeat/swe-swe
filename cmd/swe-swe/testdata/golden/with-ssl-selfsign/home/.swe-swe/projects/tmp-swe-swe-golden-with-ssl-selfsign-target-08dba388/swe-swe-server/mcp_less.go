@@ -43,6 +43,13 @@ const unixSocketPathMax = 104
 // project was created with `swe-swe init --runtime=host --without-mcp`.
 func mcpLessEnabled() bool { return os.Getenv("SWE_MCP_LESS") != "" }
 
+// mcpAppsEnabled reports whether each mcp-cli-proxy should tell its MCP
+// server "I can show pages" (--advertise-ui). `swe-swe up` exports
+// SWE_MCP_APPS=1 only for a project created with
+// `swe-swe init --without-mcp --with-mcp-apps`. Off by default: tools still
+// return plain text either way, so this only adds pages, never removes tools.
+func mcpAppsEnabled() bool { return os.Getenv("SWE_MCP_APPS") != "" }
+
 // MCP-less mode: instead of the agent's native MCP client spawning each server
 // over stdio, swe-swe-server launches one long-lived `mcp-cli-proxy` per server
 // per session, and the agent reaches them through the `mcp` CLI over unix
@@ -166,19 +173,27 @@ func (f *mcpLessFleet) launchAll() error {
 	return nil
 }
 
+// proxyArgs builds one mcp-cli-proxy command line. advertiseUI adds
+// --advertise-ui so the proxy declares MCP Apps support in its handshake.
+func proxyArgs(spec proxySpec, sock string, advertiseUI bool) []string {
+	args := []string{"--name", spec.Name, "--socket", sock}
+	if len(spec.BlockingTools) > 0 {
+		args = append(args, "--blocking-tools", strings.Join(spec.BlockingTools, ","))
+	}
+	if advertiseUI {
+		args = append(args, "--advertise-ui")
+	}
+	args = append(args, "--")
+	return append(args, spec.Argv...)
+}
+
 // startLocked starts one helper and tracks it. Caller holds f.mu.
 func (f *mcpLessFleet) startLocked(spec proxySpec) {
 	sock := filepath.Join(f.socketDir, spec.socketName())
 	// A socket left by a helper that stopped would make the new one's bind
 	// fail -- and keeps the agent believing the old one is still there.
 	os.Remove(sock)
-	args := []string{"--name", spec.Name, "--socket", sock}
-	if len(spec.BlockingTools) > 0 {
-		args = append(args, "--blocking-tools", strings.Join(spec.BlockingTools, ","))
-	}
-	args = append(args, "--")
-	args = append(args, spec.Argv...)
-	cmd := exec.Command(mcpCliProxyBin, args...)
+	cmd := exec.Command(mcpCliProxyBin, proxyArgs(spec, sock, mcpAppsEnabled())...)
 	cmd.Env = f.env
 	cmd.Dir = f.workDir
 	cmd.Stdout = os.Stdout

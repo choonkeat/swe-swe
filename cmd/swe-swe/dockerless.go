@@ -146,7 +146,10 @@ func executeDockerlessInit(absPath, sweDir string, config InitConfig) {
 // per session (the `mcp` + `mcp-cli-proxy` binaries resolve via that same
 // PATH entry). Pure
 // for testability; the actual exec lives in handleDockerlessCommand.
-func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig, mcpLess bool, singlePort bool) (bin string, args, env []string) {
+// mcpApps (init --with-mcp-apps) exports SWE_MCP_APPS=1 so each proxy runs
+// with --advertise-ui; it only means something alongside mcpLess, so it is
+// dropped otherwise.
+func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, tunnel tunnelConfig, mcpLess bool, singlePort bool, mcpApps bool) (bin string, args, env []string) {
 	binDir := filepath.Join(sweDir, "bin")
 	bin = filepath.Join(binDir, "swe-swe-server")
 	// Host-native paths: the project is the workspace; the dumped sweDir is
@@ -210,6 +213,9 @@ func dockerlessServerInvocation(sweDir, absPath, port string, baseEnv []string, 
 	env = append(env, "SWE_RUNTIME=host")
 	if mcpLess {
 		env = append(env, "SWE_MCP_LESS=1")
+		if mcpApps {
+			env = append(env, "SWE_MCP_APPS=1")
+		}
 	}
 	return bin, args, env
 }
@@ -288,6 +294,16 @@ func loadDockerlessSinglePort(sweDir string) bool {
 	return cfg.SinglePort
 }
 
+// loadDockerlessMCPApps reads back `swe-swe init --with-mcp-apps`. Missing or
+// unreadable config = off.
+func loadDockerlessMCPApps(sweDir string) bool {
+	cfg, err := loadInitConfig(sweDir)
+	if err != nil {
+		return false
+	}
+	return cfg.WithMCPApps
+}
+
 func loadDockerlessMCPLess(sweDir string) bool {
 	cfg, err := loadInitConfig(sweDir)
 	if err != nil {
@@ -315,13 +331,17 @@ func handleDockerlessCommand(command, sweDir, absPath string, args []string) {
 		port := dockerlessPort(os.Getenv)
 		tunnel := loadDockerlessTunnelConfig(sweDir)
 		mcpLess := loadDockerlessMCPLess(sweDir)
+		mcpApps := loadDockerlessMCPApps(sweDir)
 		singlePort := loadDockerlessSinglePort(sweDir)
-		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel, mcpLess, singlePort)
+		bin, sargs, env := dockerlessServerInvocation(sweDir, absPath, port, os.Environ(), tunnel, mcpLess, singlePort, mcpApps)
 		if tunnel.serverURL != "" {
 			fmt.Printf("Tunnel mode: connecting via %s\n", tunnel.serverURL)
 		}
 		if mcpLess {
 			fmt.Println("MCP-less mode: agents reach tools through the `mcp` CLI (server-launched proxy fleet)")
+			if mcpApps {
+				fmt.Println("MCP Apps: proxies tell MCP servers they can show pages (--with-mcp-apps)")
+			}
 		}
 		if singlePort {
 			fmt.Println("Single-port mode: every pane is served from this one listener; no per-session proxy ports are opened")

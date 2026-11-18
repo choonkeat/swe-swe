@@ -113,7 +113,7 @@ func TestClearDockerlessMarker(t *testing.T) {
 func TestDockerlessServerInvocation(t *testing.T) {
 	sweDir := "/home/u/.swe-swe/projects/proj"
 	absPath := "/work/proj"
-	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"}, tunnelConfig{}, false, false)
+	bin, args, env := dockerlessServerInvocation(sweDir, absPath, "1977", []string{"PATH=/usr/bin", "HOME=/home/u"}, tunnelConfig{}, false, false, false)
 
 	if want := filepath.Join(sweDir, "bin", "swe-swe-server"); bin != want {
 		t.Errorf("bin = %q, want %q", bin, want)
@@ -222,13 +222,13 @@ func TestWriteDockerlessMCPConfig(t *testing.T) {
 func TestDockerlessServerInvocationTunnel(t *testing.T) {
 	sweDir := "/home/u/.swe-swe/projects/proj"
 	// Disabled: no tunnel args.
-	_, args, _ := dockerlessServerInvocation(sweDir, "/p", "1977", nil, tunnelConfig{}, false, false)
+	_, args, _ := dockerlessServerInvocation(sweDir, "/p", "1977", nil, tunnelConfig{}, false, false, false)
 	if argsContainValue(args, "-tunnel-server-url") {
 		t.Errorf("unexpected tunnel args when disabled: %v", args)
 	}
 	// Enabled.
 	_, args, _ = dockerlessServerInvocation(sweDir, "/p", "1977", nil,
-		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem"}, false, false)
+		tunnelConfig{serverURL: "https://tunnel.example.com", clientCert: "/c.pem"}, false, false, false)
 	if !argsContainPair(args, "-tunnel-server-url", "https://tunnel.example.com") {
 		t.Errorf("args %v missing -tunnel-server-url", args)
 	}
@@ -248,7 +248,7 @@ func TestDockerlessServerInvocationTunnel(t *testing.T) {
 // The server copies swe-swe's project-scoped agent wiring into every new
 // project / clone only when it knows it runs host-native.
 func TestDockerlessServerInvocationSetsHostRuntime(t *testing.T) {
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false)
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false, false)
 	for _, e := range env {
 		if e == "SWE_RUNTIME=host" {
 			return
@@ -258,7 +258,7 @@ func TestDockerlessServerInvocationSetsHostRuntime(t *testing.T) {
 }
 
 func TestDockerlessServerInvocationSetsServerPort(t *testing.T) {
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false)
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false, false)
 	found := false
 	for _, e := range env {
 		if e == "SWE_SERVER_PORT=1977" {
@@ -390,11 +390,11 @@ func TestDockerlessServerInvocationMCPLess(t *testing.T) {
 		}
 		return false
 	}
-	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, true, false)
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, true, false, false)
 	if !has(env) {
 		t.Errorf("mcpLess=true: env %v lacks SWE_MCP_LESS=1", env)
 	}
-	_, _, env = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false)
+	_, _, env = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false, false)
 	if has(env) {
 		t.Errorf("mcpLess=false: env %v must not export SWE_MCP_LESS", env)
 	}
@@ -412,11 +412,11 @@ func TestDockerlessServerInvocationSinglePort(t *testing.T) {
 		}
 		return false
 	}
-	_, args, _ := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, true)
+	_, args, _ := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, true, false)
 	if !has(args) {
 		t.Errorf("singlePort=true: args %v lack -single-port", args)
 	}
-	_, args, _ = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false)
+	_, args, _ = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false, false)
 	if has(args) {
 		t.Errorf("singlePort=false: args %v must not pass -single-port", args)
 	}
@@ -553,5 +553,43 @@ func TestRefreshDockerlessBinaries(t *testing.T) {
 	}
 	if info, err := os.Stat(stale); err != nil || info.Mode().Perm()&0111 == 0 {
 		t.Errorf("swe-swe-server not executable after refresh: %v %v", info, err)
+	}
+}
+
+// --with-mcp-apps: SWE_MCP_APPS=1 is exported only together with
+// SWE_MCP_LESS=1 (the proxy fleet is the only thing that reads it today).
+func TestDockerlessServerInvocationMCPApps(t *testing.T) {
+	has := func(env []string) bool {
+		for _, e := range env {
+			if e == "SWE_MCP_APPS=1" {
+				return true
+			}
+		}
+		return false
+	}
+	_, _, env := dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, true, false, true)
+	if !has(env) {
+		t.Errorf("mcpLess+mcpApps: env %v lacks SWE_MCP_APPS=1", env)
+	}
+	_, _, env = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, false, false, true)
+	if has(env) {
+		t.Errorf("mcpApps without mcpLess: env %v must not export SWE_MCP_APPS", env)
+	}
+	_, _, env = dockerlessServerInvocation("/s", "/p", "1977", []string{"PATH=/usr/bin"}, tunnelConfig{}, true, false, false)
+	if has(env) {
+		t.Errorf("mcpLess only: env %v must not export SWE_MCP_APPS", env)
+	}
+}
+
+func TestLoadDockerlessMCPApps(t *testing.T) {
+	sweDir := t.TempDir()
+	if loadDockerlessMCPApps(sweDir) {
+		t.Error("missing init.json must read as off")
+	}
+	if err := saveInitConfig(sweDir, InitConfig{Runtime: RuntimeHost, WithoutMCP: true, WithMCPApps: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !loadDockerlessMCPApps(sweDir) {
+		t.Error("saved withMCPApps=true not read back")
 	}
 }

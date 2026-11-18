@@ -1,0 +1,1 @@
+Note: --with-mcp-apps takes effect only with --without-mcp for now; saved, but this setup will not advertise MCP Apps support

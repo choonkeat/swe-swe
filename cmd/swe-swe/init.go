@@ -1169,6 +1169,14 @@ func handleInit() {
 		os.Exit(1)
 	}
 
+	// --with-mcp-apps is wired only through the MCP-less proxy fleet so far
+	// (native MCP waits on agent-chat `wrap`). Keep the setting -- it takes
+	// effect on a later --without-mcp re-init and stays forward-compatible --
+	// but say plainly that it does nothing yet.
+	if *withMCPApps && !*withoutMCP {
+		fmt.Fprintln(os.Stderr, "Note: --with-mcp-apps takes effect only with --without-mcp for now; saved, but this setup will not advertise MCP Apps support")
+	}
+
 	// Single-port mode and tunnel mode contradict each other: tunneld reaches
 	// every pane by dialing this box's per-session proxy listeners, and
 	// --single-port is the instruction not to open them. swe-swe-server

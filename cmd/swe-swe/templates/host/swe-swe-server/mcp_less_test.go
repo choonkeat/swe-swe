@@ -179,3 +179,31 @@ func TestLaunchMcpLessFleet_TerminalOmitsAgentChat(t *testing.T) {
 		t.Error("terminal fleet must not launch agent-chat")
 	}
 }
+
+// --with-mcp-apps: the proxy gets --advertise-ui (before the "--" that starts
+// the child command, so the child never sees it); without it the command line
+// is exactly as before.
+func TestProxyArgsAdvertiseUI(t *testing.T) {
+	spec := proxySpec{Name: "svc", Argv: []string{"node", "server.js"}, BlockingTools: []string{"ask"}}
+	got := strings.Join(proxyArgs(spec, "/s/svc.sock", false), " ")
+	want := "--name svc --socket /s/svc.sock --blocking-tools ask -- node server.js"
+	if got != want {
+		t.Errorf("off:\n got %q\nwant %q", got, want)
+	}
+	got = strings.Join(proxyArgs(spec, "/s/svc.sock", true), " ")
+	want = "--name svc --socket /s/svc.sock --blocking-tools ask --advertise-ui -- node server.js"
+	if got != want {
+		t.Errorf("on:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestMcpAppsEnabled(t *testing.T) {
+	t.Setenv("SWE_MCP_APPS", "")
+	if mcpAppsEnabled() {
+		t.Error("unset SWE_MCP_APPS must mean off")
+	}
+	t.Setenv("SWE_MCP_APPS", "1")
+	if !mcpAppsEnabled() {
+		t.Error("SWE_MCP_APPS=1 must mean on")
+	}
+}
