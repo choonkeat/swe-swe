@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+    What the Agent View tab shows when Agent View cannot work here, instead of
+    the tab disappearing. Loaded by terminal-ui.js with
+    ?reason=off|missing&missing=chromium,x11vnc (from the status frame's
+    agentViewReason / agentViewMissing).
+    Reads swe-swe-theme cookie for dark/light theme, like vnc_lite.html.
+    -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Agent View unavailable</title>
+    <script>
+        // Apply theme from cookie before first paint
+        (function(){
+            var m = document.cookie.match(/(?:^|;\s*)swe-swe-theme=([^;]+)/);
+            if (m && m[1] === 'light') document.documentElement.setAttribute('data-theme', 'light');
+        })();
+    </script>
+    <style>
+        /* Deliberately dull: greys only, no accent colour, so it reads as
+           "something is not working here" rather than a feature page. */
+        :root {
+            --bg: #1c1d1f;
+            --border: #3a3b3e;
+            --text: #b8babd;
+            --heading: #cfd1d4;
+            --muted: #85878b;
+            --btn-bg: #2e2f32;
+            --btn-text: #cfd1d4;
+            --code-bg: #18191a;
+        }
+        [data-theme="light"] {
+            --bg: #f2f2f3;
+            --border: #d4d4d6;
+            --text: #55575b;
+            --heading: #3d3f43;
+            --muted: #7a7c80;
+            --btn-bg: #dcdcde;
+            --btn-text: #3d3f43;
+            --code-bg: #f7f7f8;
+        }
+        html, body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        main {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px 16px 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        h1, h2 {
+            color: var(--heading);
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 4px;
+        }
+        h2 {
+            font-size: 15px;
+            margin: 0 0 6px;
+        }
+        p {
+            margin: 0;
+        }
+        .muted {
+            color: var(--muted);
+        }
+        .example {
+            width: 100%;
+            height: auto;
+            display: block;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            /* An example of what is missing, not the real thing. */
+            filter: grayscale(1);
+            opacity: 0.55;
+        }
+        ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        li + li {
+            margin-top: 8px;
+        }
+        .code {
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            margin: 6px 0 0;
+        }
+        .code code {
+            flex: 1;
+            min-width: 0;
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+        button {
+            background: var(--btn-bg);
+            color: var(--btn-text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 5px 10px;
+            font: inherit;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        a {
+            color: var(--heading);
+        }
+        [hidden] {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <section>
+        <h1 id="title">Agent View isn't available here</h1>
+        <p class="muted">Agent View is a live browser your agent controls, so you can watch it test your app.</p>
+    </section>
+
+    <img class="example" src="images/agent-view-example.png" alt="Example: Agent View showing a web page in the agent's browser" width="720" height="325">
+
+    <section>
+        <h2>Why</h2>
+        <ul>
+            <li id="why"></li>
+            <li>Your agent can't use a browser either, so it cannot open web pages to test your app.</li>
+        </ul>
+    </section>
+
+    <section>
+        <h2>How to get it</h2>
+        <ul id="options">
+            <li id="opt-install">
+                <b>Install them here</b> (Debian and Ubuntu), then restart swe-swe:
+                <div class="code">
+                    <code id="install-line">sudo apt-get install -y chromium xvfb x11vnc novnc websockify</code>
+                    <button type="button" id="copy-btn">Copy</button>
+                </div>
+            </li>
+            <li id="opt-setup">
+                <b id="setup-title">Use another machine</b>: <span id="setup-text">the browser can run on a different machine.</span>
+                <a href="https://swe-swe.netlify.app/" target="_blank" rel="noopener">Open setup steps</a>
+            </li>
+            <li id="opt-retry" hidden>
+                <b>Try again</b>: ask your agent to open a web page. It tries to start the browser each time.
+            </li>
+            <li id="opt-check-machine" hidden>
+                <b>Check the browser machine is running</b>, and that this machine can reach it.
+            </li>
+            <li id="opt-check-address" hidden>
+                <b>Check the address</b>: it is the SWE_AGENT_VIEW setting swe-swe was started with.
+            </li>
+            <li id="opt-restart" hidden>
+                <b>Restart swe-swe</b> if it keeps happening.
+            </li>
+            <li id="opt-off">
+                <b>Leave it off</b>: everything else keeps working (Agent Chat, Terminal, Preview and Files).
+            </li>
+        </ul>
+    </section>
+</main>
+<script>
+    (function () {
+        var params = new URLSearchParams(location.search);
+        var reason = params.get('reason');
+        // Only program names the server can report; anything else is dropped
+        // rather than echoed onto the page.
+        var known = ['Xvfb', 'chromium', 'x11vnc', 'websockify'];
+        var missing = (params.get('missing') || '').split(',').filter(function (p) {
+            return known.indexOf(p) !== -1;
+        });
+
+        var why = document.getElementById('why');
+        var options = document.getElementById('options');
+        var show = function (ids) {
+            [].forEach.call(options.children, function (li) {
+                li.hidden = ids.indexOf(li.id) === -1;
+            });
+            // In the order given.
+            ids.forEach(function (id) { options.appendChild(document.getElementById(id)); });
+        };
+        // host:port as the server reports it; anything else is not echoed.
+        var address = params.get('address') || '';
+        if (!/^[A-Za-z0-9.\-]+(:[0-9]+)?$|^\[[0-9A-Fa-f:.]+\](:[0-9]+)?$/.test(address)) address = '';
+        if (reason === 'unreachable' || reason === 'failed') {
+            document.getElementById('title').textContent = "Agent View couldn't start";
+            document.querySelector('#options').previousElementSibling.textContent = 'What to try';
+        }
+        if (reason === 'unreachable') {
+            why.textContent = address
+                ? "Can't reach the browser machine at " + address + '.'
+                : "Can't reach the browser machine.";
+            show(['opt-check-machine', 'opt-check-address', 'opt-retry']);
+        } else if (reason === 'failed') {
+            why.textContent = "The browser on this machine didn't start.";
+            show(['opt-retry', 'opt-restart']);
+        } else if (reason === 'off') {
+            why.textContent = 'It was switched off when swe-swe was set up.';
+            // Installing alone does not switch it back on; the setup steps do.
+            document.getElementById('opt-install').hidden = true;
+            document.getElementById('setup-title').textContent = 'Switch it on';
+            document.getElementById('setup-text').textContent =
+                'run the setup steps again and keep the browser programs ticked.';
+            options.insertBefore(document.getElementById('opt-off'), options.firstChild);
+        } else {
+            why.textContent = missing.length
+                ? 'These programs are missing on this machine: ' + missing.join(', ') + '.'
+                : 'Some programs it needs are missing on this machine.';
+        }
+
+        var copyBtn = document.getElementById('copy-btn');
+        copyBtn.addEventListener('click', function () {
+            var line = document.getElementById('install-line').textContent;
+            var done = function () {
+                copyBtn.textContent = 'Copied';
+                setTimeout(function () { copyBtn.textContent = 'Copy'; }, 1500);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(line).then(done, function () {});
+            }
+        });
+    })();
+</script>
+</body>
+</html>

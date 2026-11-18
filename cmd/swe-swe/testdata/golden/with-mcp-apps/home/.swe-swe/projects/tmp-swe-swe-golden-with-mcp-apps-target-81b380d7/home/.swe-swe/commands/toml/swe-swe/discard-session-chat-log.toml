@@ -1,0 +1,13 @@
+description = "Discard this session's chat log -- stop the streaming export and delete its uncommitted log file"
+
+prompt = """
+# Discard Session Chat Log
+
+Stops archiving this conversation into `./agent-chats/`.
+
+1. **Identify this session's log**: untitled logs carry the session UUID in the filename; titled logs carry it in their `session:` header line.
+2. **Check git first**: if that file is tracked (`git ls-files --error-unmatch <file>` succeeds), STOP and surface it with `send_message` -- it was committed earlier, and removing a committed log from the repo is the user's call, not yours.
+3. **Discard**: call the `chatlog_optout` tool -- it stops the streaming export and deletes this session's `.md`. Shared `agent-chats/assets/` files are left alone (their content-sha names may be referenced by other sessions' logs); `index.html` is regenerated.
+
+Confirm with `send_message`. Mention this is reversible mid-session: `set_chat_title` re-enables the export and backfills the full conversation history from the JSONL event log.
+"""

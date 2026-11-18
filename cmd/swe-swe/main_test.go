@@ -783,6 +783,7 @@ func TestGoldenFiles(t *testing.T) {
 		{"tunnel-mode-local-ports", []string{"--tunnel-server-url", "https://tunnel.example.com", "--tunnel-local-ports"}},
 		{"single-port", []string{"--single-port"}},
 		{"single-port-ssl", []string{"--single-port", "--ssl", "selfsign"}},
+		{"with-mcp-apps", []string{"--with-mcp-apps"}},
 	}
 
 	for _, v := range variants {
@@ -1763,6 +1764,7 @@ func TestInitConfigReuseCoverage(t *testing.T) {
 		"SinglePort":          true,
 		"Runtime":             true,
 		"WithoutMCP":          true,
+		"WithMCPApps":         true,
 	}
 	// Fields intentionally NOT restored: computed or stamped fresh at init time.
 	notReused := map[string]bool{

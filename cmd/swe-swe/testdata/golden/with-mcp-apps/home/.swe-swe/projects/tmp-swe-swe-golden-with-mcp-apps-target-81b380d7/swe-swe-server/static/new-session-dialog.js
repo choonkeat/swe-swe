@@ -1,0 +1,2102 @@
+// New Session Dialog functionality
+// Manages the "Where" dropdown, repo fetching, prepare flow, and session creation.
+(function() {
+    var overlay = document.getElementById('new-session-dialog-overlay');
+    var closeBtn = document.getElementById('new-session-close');
+    var modeSelect = document.getElementById('new-session-mode');
+    var newSessionFields = document.getElementById('new-session-fields');
+    var cloneUrlField = document.getElementById('clone-url-field');
+    var createNameField = document.getElementById('create-name-field');
+    var urlInput = document.getElementById('new-session-url');
+    var nameInput = document.getElementById('new-session-name');
+    var cloneNextBtn = document.getElementById('clone-next-btn');
+    var createNextBtn = document.getElementById('create-next-btn');
+    var warningDiv = document.getElementById('new-session-warning');
+    var postPrepareFields = document.getElementById('post-prepare-fields');
+    var branchField = document.getElementById('branch-field');
+    var branchInput = document.getElementById('new-session-branch');
+    var agentsContainer = document.getElementById('new-session-agents');
+    var startTerminalBtn = document.getElementById('new-session-start-terminal');
+    var startChatBtn = document.getElementById('new-session-start-chat');
+    var errorDiv = document.getElementById('new-session-error');
+    var agentHint = document.getElementById('new-session-agent-hint');
+    var loadingDiv = document.getElementById('new-session-loading');
+    var loadingText = document.getElementById('new-session-loading-text');
+    var repoHistoryList = document.getElementById('repo-history');
+    var branchList = document.getElementById('branch-list');
+    var newSessionColorInput = document.getElementById('new-session-color-input');
+    var newSessionColorHex = document.getElementById('new-session-color-hex');
+    var newSessionColorClear = document.getElementById('new-session-color-clear');
+    var envHint = document.getElementById('new-session-env-hint');
+    var whereCombo = document.getElementById('where-combo');
+    var branchLabel = document.getElementById('branch-label');
+    var branchCardsEl = document.getElementById('branch-cards');
+    var branchWorkspaceSlot = document.getElementById('branch-card-workspace-slot');
+    var branchNewCard = document.getElementById('branch-new-card');
+    var branchNewPlus = document.getElementById('branch-new-plus');
+    var branchCardsMsg = document.getElementById('branch-cards-msg');
+    var branchCardsSections = document.getElementById('branch-cards-sections');
+    var extraArgsInput = document.getElementById('new-session-extra-args');
+
+    // Derive a short "org/repo" label from a git remote URL for the Where
+    // dropdown's primary line (the full URL rides along as the detail line).
+    // Handles scp-style (git@host:org/repo.git) and URL-style
+    // (https://host/org/repo.git) remotes; falls back to `fallback` (dirName).
+    function shortRepoName(url, fallback) {
+        if (!url) return fallback || url;
+        var s = url.trim().replace(/\.git$/, '');
+        s = s.replace(/^[a-z][a-z0-9+.-]*:\/\//i, ''); // drop scheme://
+        s = s.replace(/^[^@\/]+@/, '');                 // drop user@
+        var path = s.replace(/^[^\/:]+[:\/]/, '');       // drop host and first separator
+        var parts = path.split('/').filter(Boolean);
+        if (parts.length >= 2) return parts.slice(-2).join('/');
+        if (parts.length === 1) return parts[0];
+        return fallback || url;
+    }
+
+    // The static "Leave blank for default branch" placeholder, captured before
+    // any prefill overrides it so reset can restore it. A recording's "+ New"
+    // swaps in a branch-specific hint (see applyPendingPrefill).
+    var DEFAULT_BRANCH_PLACEHOLDER = branchInput ? branchInput.placeholder : '';
+    var BRANCH_LABEL = branchLabel ? branchLabel.textContent : '';
+    var NEW_BRANCH_PLACEHOLDER = 'Find or name a new branch';
+    function setBranchPlaceholder(text) {
+        if (branchInput) branchInput.placeholder = text;
+    }
+
+    // Clone-credential UI (three-state: TRANSPARENT / FRESH / REJECTED).
+    var cloneCredTransparent = document.getElementById('clone-cred-transparent');
+    var cloneCredTransparentHost = document.getElementById('clone-cred-transparent-host');
+    var cloneCredChange = document.getElementById('clone-cred-change');
+    var cloneCredFields = document.getElementById('clone-cred-fields');
+    var cloneCredNotice = document.getElementById('clone-cred-notice');
+    var cloneCredHostInput = document.getElementById('clone-cred-host');
+    var cloneCredUsernameInput = document.getElementById('clone-cred-username');
+    var cloneCredTokenInput = document.getElementById('clone-cred-token');
+    var cloneCredSubmit = document.getElementById('clone-cred-submit');
+
+    var dialogState = {
+        sessionUUID: '',
+        debug: false,
+        mode: '',
+        repoPath: '',
+        selectedBranch: '',
+        selectedAgent: '',
+        preSelectedAgent: '',
+        isNewProject: false,
+        projectName: '',
+        sessionColor: '',
+        whereKey: '',
+        extraArgs: '',
+        // init_sha of the selected repo (from /api/repo/branches). Used to
+        // locate this repo's env-vars blob in localStorage so it can ride the
+        // creation POST and reach the new session's process before it spawns.
+        initSha: '',
+        // Host of the selected repo's HTTPS remote (from /api/repo/prepare or
+        // /api/repo/branches). Empty for SSH/local remotes. Used to look up
+        // a saved PAT for this repo's remote.
+        remoteHost: '',
+        // Branch cards: the last /api/repo/branches reply, the picked card
+        // (see static/modules/branch-cards.js for the pick shapes), and which
+        // online groups the user has opened. cardsOn is false for a reply
+        // without cards.
+        cardsOn: false,
+        branchData: null,
+        branchPick: null,
+        branchBlocked: '',
+        openRemotes: {},
+        // What deleting the picked card would lose: {branch, state:
+        // 'checking' | 'done' | 'failed', check}. Only the picked card is
+        // ever checked; opening the dialog checks nothing. pickCheckAbort
+        // drops the in-flight check when another card is picked.
+        pickCheck: null,
+        pickCheckAbort: null,
+        // Online sections download only when opened: remote -> {state:
+        // 'fetching' | 'done' | 'failed', reason}, plus each download's
+        // AbortController so closing the dialog drops them.
+        remoteFetches: {},
+        remoteFetchAborts: {},
+        // Before Start creates a new branch, ask the remote about that one
+        // name: {name, remote, mode, state: 'checking' | 'failed' |
+        // 'clear' | 'skipped', reason}.
+        nameCheck: null,
+        nameCheckAbort: null,
+        // Delete flow per card, keyed by branchCards.localKey/leftoverKey
+        // (and 'workspace:' for Switch back). Lives until the dialog closes,
+        // which is how long an Undo strip stays.
+        cardStates: {},
+        // Settings carried over from a recording's "+ New" button, applied
+        // once the prefilled repo finishes preparing. Cleared if the user
+        // switches the Where selection before that happens.
+        pendingPrefill: null,
+        // Session display name carried over from a recording (recordings name
+        // their session via ?name=...); rides the creation POST unchanged.
+        prefillName: ''
+    };
+
+    var REPO_HISTORY_KEY = 'swe-swe-repo-history';
+
+    function loadRepoHistory() {
+        try {
+            var history = JSON.parse(localStorage.getItem(REPO_HISTORY_KEY) || '[]');
+            repoHistoryList.innerHTML = '';
+            history.forEach(function(url) {
+                var option = document.createElement('option');
+                option.value = url;
+                repoHistoryList.appendChild(option);
+            });
+        } catch (e) {
+            console.error('Failed to load repo history:', e);
+        }
+    }
+
+    function saveToRepoHistory(url) {
+        try {
+            var history = JSON.parse(localStorage.getItem(REPO_HISTORY_KEY) || '[]');
+            history = history.filter(function(u) { return u !== url; });
+            history.unshift(url);
+            history = history.slice(0, 10);
+            localStorage.setItem(REPO_HISTORY_KEY, JSON.stringify(history));
+        } catch (e) {
+            console.error('Failed to save repo history:', e);
+        }
+    }
+
+    // Per-device "last used" recency for the Where dropdown. A map of repo
+    // path -> last-used epoch ms, kept in localStorage (per-device, not
+    // synced). fetchAndPopulateRepos sorts the dynamic options by this so the
+    // repo you touched most recently floats to the top; never-used repos keep
+    // the server's alphabetical order.
+    var REPO_RECENCY_KEY = 'swe-swe-repo-recency';
+    var REPO_RECENCY_MAX = 50; // cap so the map can't grow unbounded
+
+    function loadRepoRecency() {
+        try {
+            return JSON.parse(localStorage.getItem(REPO_RECENCY_KEY) || '{}') || {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    function recordRepoUsage(repoPath) {
+        if (!repoPath) return;
+        try {
+            var rec = loadRepoRecency();
+            rec[repoPath] = Date.now();
+            // Trim to the most-recent REPO_RECENCY_MAX entries so stale paths
+            // (repos long since deleted) don't accumulate forever.
+            var keys = Object.keys(rec);
+            if (keys.length > REPO_RECENCY_MAX) {
+                keys.sort(function(a, b) { return rec[b] - rec[a]; });
+                var trimmed = {};
+                keys.slice(0, REPO_RECENCY_MAX).forEach(function(k) { trimmed[k] = rec[k]; });
+                rec = trimmed;
+            }
+            localStorage.setItem(REPO_RECENCY_KEY, JSON.stringify(rec));
+        } catch (e) {}
+    }
+
+    // Sync current <select> options to the where combo-box (excluding disabled placeholder)
+    function syncWhereComboOptions() {
+        if (!whereCombo) return;
+        var opts = [];
+        for (var i = 0; i < modeSelect.options.length; i++) {
+            var opt = modeSelect.options[i];
+            if (opt.disabled || opt.value === '') continue;
+            opts.push({ value: opt.value, label: opt.textContent, detail: opt.dataset.detail || '' });
+        }
+        whereCombo.setOptions(opts);
+    }
+
+    function resetDownstream() {
+        // Hide post-prepare fields
+        postPrepareFields.classList.add('dialog__field--hidden');
+        if (agentHint) agentHint.style.display = 'none';
+
+        // Hide any revealed clone-credential UI
+        hideCloneCredUI();
+
+        // Reset warning
+        warningDiv.style.display = 'none';
+        warningDiv.textContent = '';
+
+        // Reset branch
+        branchField.classList.remove('dialog__field--hidden');
+        branchInput.value = '';
+        branchInput.disabled = true;
+        branchList.innerHTML = '';
+        setBranchPlaceholder(DEFAULT_BRANCH_PLACEHOLDER);
+        setCardsMode(false);
+        dialogState.branchData = null;
+        dialogState.branchPick = null;
+        dialogState.branchBlocked = '';
+        dialogState.openRemotes = {};
+        dialogState.cardStates = {};
+
+        // Reset error/loading
+        errorDiv.textContent = '';
+        loadingDiv.style.display = 'none';
+        startTerminalBtn.disabled = true; startChatBtn.disabled = true;
+
+        // Reset agents
+        var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
+        agentLabels.forEach(function(label) {
+            label.classList.add('dialog__agent--disabled');
+            label.classList.remove('dialog__agent--selected');
+            var radio = label.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.disabled = true;
+                radio.checked = false;
+            }
+        });
+
+        // Reset state
+        dialogState.repoPath = '';
+        dialogState.selectedBranch = '';
+        dialogState.selectedAgent = '';
+        dialogState.isNewProject = false;
+        dialogState.projectName = '';
+        dialogState.sessionColor = '';
+        dialogState.whereKey = '';
+        dialogState.extraArgs = '';
+        dialogState.initSha = '';
+        dialogState.remoteHost = '';
+        dialogState.prefillName = '';
+        syncEnvField();
+        // Whatever repo the in-flight checks were for, it is not the one the
+        // user is now looking at.
+        abortPickCheck();
+        abortRemoteFetches();
+        abortNameCheck();
+        dialogState.remoteFetches = {};
+        dialogState.nameCheck = null;
+        if (extraArgsInput) extraArgsInput.value = '';
+
+        // Reset color picker
+        if (window.sweSweTheme) {
+            newSessionColorInput.value = window.sweSweTheme.getCurrentColor();
+        }
+        newSessionColorHex.value = '';
+        newSessionColorHex.placeholder = 'Use server default';
+    }
+
+    function resetDialog() {
+        modeSelect.value = '';
+        dialogState.mode = '';
+        dialogState.pendingPrefill = null;
+        if (whereCombo) whereCombo.value = '';
+
+        // Hide everything below dropdown
+        newSessionFields.classList.add('dialog__field--hidden');
+        cloneUrlField.classList.add('dialog__field--hidden');
+        createNameField.classList.add('dialog__field--hidden');
+        urlInput.value = '';
+        nameInput.value = '';
+
+        resetDownstream();
+    }
+
+    function showError(msg) {
+        errorDiv.textContent = msg;
+        loadingDiv.style.display = 'none';
+    }
+
+    function showLoading(msg) {
+        loadingText.textContent = msg || 'Loading...';
+        loadingDiv.style.display = 'flex';
+        errorDiv.textContent = '';
+    }
+
+    function hideLoading() {
+        loadingDiv.style.display = 'none';
+    }
+
+    // With exactly one agent available there is no choice to make, and leaving
+    // it unselected just leaves both Start buttons dead on arrival.
+    function autoSelectSoleAgent() {
+        if (dialogState.selectedAgent) return;
+        var labels = agentsContainer.querySelectorAll('.dialog__agent:not(.dialog__agent--disabled)');
+        if (labels.length === 1) selectAgent(labels[0]);
+    }
+
+    // Say why the Start buttons are dead. A disabled button fires no click, so
+    // the showError('Please select an agent') guard inside startSession() can
+    // never run -- the user was left with two greyed-out buttons and no reason.
+    function updateStartHint() {
+        if (!agentHint) return;
+        var waiting = !dialogState.selectedAgent &&
+                      !postPrepareFields.classList.contains('dialog__field--hidden');
+        agentHint.style.display = waiting ? 'block' : 'none';
+    }
+
+    function enableBranchAndAgent() {
+        // Enable branch input
+        branchInput.disabled = false;
+
+        // Enable agent selection
+        var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
+        agentLabels.forEach(function(label) {
+            label.classList.remove('dialog__agent--disabled');
+            var radio = label.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.disabled = false;
+            }
+        });
+
+        // Auto-select preselected agent
+        if (dialogState.preSelectedAgent) {
+            var preSelectedLabel = agentsContainer.querySelector('[data-agent="' + dialogState.preSelectedAgent + '"]');
+            if (preSelectedLabel) {
+                var radio = preSelectedLabel.querySelector('input[type="radio"]');
+                if (radio) {
+                    radio.checked = true;
+                    preSelectedLabel.classList.add('dialog__agent--selected');
+                    dialogState.selectedAgent = dialogState.preSelectedAgent;
+                    startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+                    applyBranchBlockToStart();
+                }
+            }
+        }
+
+        autoSelectSoleAgent();
+        updateStartHint();
+    }
+
+    function enableAgentOnly() {
+        // For create mode: no branch, just agent
+        branchField.classList.add('dialog__field--hidden');
+
+        var agentLabels = agentsContainer.querySelectorAll('.dialog__agent');
+        agentLabels.forEach(function(label) {
+            label.classList.remove('dialog__agent--disabled');
+            var radio = label.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.disabled = false;
+            }
+        });
+
+        if (dialogState.preSelectedAgent) {
+            var preSelectedLabel = agentsContainer.querySelector('[data-agent="' + dialogState.preSelectedAgent + '"]');
+            if (preSelectedLabel) {
+                var radio = preSelectedLabel.querySelector('input[type="radio"]');
+                if (radio) {
+                    radio.checked = true;
+                    preSelectedLabel.classList.add('dialog__agent--selected');
+                    dialogState.selectedAgent = dialogState.preSelectedAgent;
+                    startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+                    applyBranchBlockToStart();
+                }
+            }
+        }
+
+        autoSelectSoleAgent();
+        updateStartHint();
+    }
+
+    // Load sticky color for the current "where" key
+    function loadWhereColor(whereKey) {
+        dialogState.whereKey = whereKey;
+        if (!window.sweSweTheme) return;
+
+        var savedColor = localStorage.getItem(window.sweSweTheme.COLOR_STORAGE_KEYS.REPO_TYPE_PREFIX + whereKey);
+        if (savedColor) {
+            newSessionColorInput.value = savedColor;
+            newSessionColorHex.value = savedColor;
+            dialogState.sessionColor = savedColor;
+        } else {
+            var serverDefault = window.sweSweTheme.getCurrentColor();
+            newSessionColorInput.value = serverDefault;
+            newSessionColorHex.value = '';
+            newSessionColorHex.placeholder = 'Use server default';
+            dialogState.sessionColor = '';
+        }
+        syncAdvSummaries();
+    }
+
+    // Fetch repos and populate dropdown with dynamic options.
+    // Returns a promise that resolves once the options (and the where combo)
+    // are in their final state, so callers can select a dynamic option.
+    function fetchAndPopulateRepos() {
+        // Remove stale dynamic options first
+        var dynamicOptions = modeSelect.querySelectorAll('option[data-dynamic]');
+        dynamicOptions.forEach(function(opt) { opt.remove(); });
+
+        return fetch('/api/repos')
+            .then(function(response) {
+                if (!response.ok) return null;
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+
+                // Give the static "Default workspace" option the same detail
+                // line the cloned-repo options get (its git origin URL).
+                // The .finally() below syncs the combo, so this shows even
+                // when there are no cloned repos.
+                if (data.workspaceRemoteURL) {
+                    var workspaceOption = modeSelect.querySelector('option[value="workspace"]');
+                    if (workspaceOption) {
+                        workspaceOption.dataset.detail = data.workspaceRemoteURL;
+                    }
+                }
+
+                if (!data.repos || data.repos.length === 0) return;
+
+                // Insert dynamic options before "Clone external repository..."
+                var cloneOption = modeSelect.querySelector('option[value="clone"]');
+
+                // Order by per-device recency: most-recently-used first.
+                // Array.prototype.sort is stable, so repos with no recorded
+                // usage (recency 0) keep the server's alphabetical order.
+                var recency = loadRepoRecency();
+                var repos = data.repos.slice();
+                repos.sort(function(a, b) {
+                    return (recency[b.path] || 0) - (recency[a.path] || 0);
+                });
+
+                repos.forEach(function(repo) {
+                    var option = document.createElement('option');
+                    option.value = repo.path;
+                    option.dataset.dynamic = 'true';
+                    if (repo.remoteURL) {
+                        // Primary line = short org/repo; detail line = full URL.
+                        option.textContent = shortRepoName(repo.remoteURL, repo.dirName);
+                        option.dataset.detail = repo.remoteURL;
+                    } else {
+                        option.textContent = repo.dirName;
+                    }
+                    modeSelect.insertBefore(option, cloneOption);
+                });
+
+                syncWhereComboOptions();
+            })
+            .catch(function(err) {
+                console.error('Failed to fetch repos:', err);
+            })
+            .finally(function() {
+                syncWhereComboOptions();
+            });
+    }
+
+    // Fill the branch cards (or, for a reply without cards, the plain branch
+    // box's datalist) from a /api/repo/branches payload. A refresh landing
+    // mid-typing keeps the typed text and re-reads what it picks, so it never
+    // moves the user off what they chose.
+    function populateBranches(branchData) {
+        dialogState.initSha = branchData.init_sha || '';
+        syncEnvField();
+        if (branchData.remoteHost) dialogState.remoteHost = branchData.remoteHost;
+        var branches = branchData.branches || [];
+        branchList.innerHTML = '';
+        branches.forEach(function(branch) {
+            var option = document.createElement('option');
+            option.value = branch;
+            branchList.appendChild(option);
+        });
+        var cardsOn = !!(window.branchCards && window.branchCards.groupCards(branchData));
+        setCardsMode(cardsOn);
+        if (cardsOn) {
+            dialogState.branchData = branchData;
+            if (branchInput.value.trim()) {
+                onBranchTyped();
+            } else {
+                if (!dialogState.branchPick) dialogState.branchPick = { kind: 'workspace' };
+                syncBranchPick();
+            }
+        }
+        if (branchData.warning) {
+            warningDiv.textContent = branchData.warning;
+            warningDiv.style.display = 'block';
+        } else {
+            // A later refresh that succeeded retires an earlier failure's
+            // message; leaving it up made a transient error look permanent.
+            warningDiv.textContent = '';
+            warningDiv.style.display = 'none';
+        }
+    }
+
+    // --- Branch cards (tasks/2026-09-25-branch-cards.md) ---
+    // Pure rules live in static/modules/branch-cards.js (window.branchCards);
+    // this part only draws them and keeps dialogState.selectedBranch -- the
+    // value Start sends -- in step with the picked card.
+
+    function setCardsMode(on) {
+        dialogState.cardsOn = on;
+        branchCardsEl.classList.toggle('branch-cards--on', on);
+        branchNewPlus.hidden = !on;
+        if (branchLabel) branchLabel.textContent = on ? 'Branch' : BRANCH_LABEL;
+        if (on) {
+            // "+ New branch" only makes new branches; existing ones are cards.
+            branchInput.removeAttribute('list');
+            if (branchInput.placeholder === DEFAULT_BRANCH_PLACEHOLDER) setBranchPlaceholder(NEW_BRANCH_PLACEHOLDER);
+        } else {
+            branchInput.setAttribute('list', 'branch-list');
+            if (branchInput.placeholder === NEW_BRANCH_PLACEHOLDER) setBranchPlaceholder(DEFAULT_BRANCH_PLACEHOLDER);
+            branchWorkspaceSlot.innerHTML = '';
+            branchCardsSections.innerHTML = '';
+            setBranchCardsMsg('', false);
+            branchNewCard.classList.remove('branch-card--picked');
+        }
+    }
+
+    // `buttons` (optional): [[label, onClick], ...] after the text.
+    function setBranchCardsMsg(text, blocked, buttons) {
+        branchCardsMsg.textContent = text;
+        branchCardsMsg.classList.toggle('branch-cards__msg--blocked', !!blocked);
+        (buttons || []).forEach(function(b) {
+            branchCardsMsg.appendChild(document.createTextNode(' '));
+            branchCardsMsg.appendChild(smallButton(b[0], '', b[1]));
+        });
+    }
+
+    // Borrow the saved HTTPS token for a remote call. In the body only,
+    // never the URL; the credential helper only hands it to its own host.
+    function withRemoteCreds(body) {
+        var creds = readCloneCreds(dialogState.remoteHost);
+        if (creds && creds.token) {
+            body.credHost = dialogState.remoteHost;
+            body.credUsername = creds.username || 'x-access-token';
+            body.credToken = creds.token;
+        }
+        return body;
+    }
+
+    function abortRemoteFetches() {
+        Object.keys(dialogState.remoteFetchAborts).forEach(function(r) {
+            dialogState.remoteFetchAborts[r].abort();
+        });
+        dialogState.remoteFetchAborts = {};
+    }
+
+    // Download one remote's branches (an online section was opened, or Retry
+    // tapped), then re-list. A failure keeps the list as it was and says so
+    // inside the section, not in the dialog-wide warning.
+    function fetchRemote(remote) {
+        var repoPath = dialogState.repoPath;
+        var st = dialogState.remoteFetches[remote];
+        if (st && st.state === 'fetching') return;
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        if (controller) dialogState.remoteFetchAborts[remote] = controller;
+        dialogState.remoteFetches[remote] = { state: 'fetching' };
+        renderBranchCards();
+        var failed = function(reason) {
+            if (dialogState.repoPath !== repoPath) return;
+            dialogState.remoteFetches[remote] = { state: 'failed', reason: reason || ("Couldn't reach " + remote + '.') };
+            renderBranchCards();
+        };
+        fetch('/api/repo/branches', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(withRemoteCreds({ path: repoPath, fetch: true, remote: remote })),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) { return response.ok ? response.json() : null; })
+            .then(function(branchData) {
+                if (!branchData) { failed(''); return; }
+                if (dialogState.repoPath !== repoPath) return;
+                var warning = branchData.warning;
+                delete branchData.warning;
+                dialogState.remoteFetches[remote] = warning
+                    ? { state: 'failed', reason: "Couldn't reach " + remote + '. ' + warning }
+                    : { state: 'done' };
+                populateBranches(branchData);
+            })
+            .catch(function() { failed(''); })
+            .finally(function() {
+                if (dialogState.remoteFetchAborts[remote] === controller) delete dialogState.remoteFetchAborts[remote];
+            });
+    }
+
+    function abortNameCheck() {
+        if (dialogState.nameCheckAbort) {
+            dialogState.nameCheckAbort.abort();
+            dialogState.nameCheckAbort = null;
+        }
+    }
+
+    // Start with a new branch name: first ask the remote whether it already
+    // has that name, so a branch that is online but was never downloaded is
+    // used instead of shadowed by a new one. Never blocks for long: the
+    // server gives up after 10 s, and Cancel, a failure or a timeout all
+    // offer "Start anyway" (create the new branch, as before) or "Back".
+    function runNameCheck(name, remote, mode) {
+        var repoPath = dialogState.repoPath;
+        abortNameCheck();
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        dialogState.nameCheckAbort = controller;
+        dialogState.nameCheck = { name: name, remote: remote, mode: mode, state: 'checking' };
+        var guard = setTimeout(function() { if (controller) controller.abort(); }, 15000);
+        var mine = function() {
+            var nc = dialogState.nameCheck;
+            return dialogState.repoPath === repoPath && nc && nc.name === name && nc.state === 'checking';
+        };
+        applyBranchBlockToStart();
+        showNameCheck();
+        fetch('/api/repo/remote-branch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(withRemoteCreds({ path: repoPath, remote: remote, name: name })),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) {
+                return response.json().catch(function() { return {}; }).then(function(body) {
+                    return { ok: response.ok, body: body || {} };
+                });
+            })
+            .then(function(r) {
+                if (!mine()) return;
+                if (!r.ok || (r.body.exists && !r.body.fetched)) {
+                    nameCheckFailed(r.body.error);
+                    return;
+                }
+                if (!r.body.exists) {
+                    dialogState.nameCheck.state = 'clear';
+                    applyBranchBlockToStart();
+                    startSession(mode);
+                    return;
+                }
+                // It is online: re-list, which turns the typed name into
+                // that online card. The user then presses Start again.
+                return fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath))
+                    .then(function(response) { return response.ok ? response.json() : null; })
+                    .then(function(branchData) {
+                        if (!mine()) return;
+                        dialogState.nameCheck = null;
+                        if (branchData) populateBranches(branchData);
+                        applyBranchBlockToStart();
+                        setBranchCardsMsg('"' + name + '" is already on ' + remote + '. Picked that branch; press Start again to use it.', false);
+                    });
+            })
+            .catch(function() {
+                if (mine()) nameCheckFailed('');
+            })
+            .finally(function() {
+                clearTimeout(guard);
+                if (dialogState.nameCheckAbort === controller) dialogState.nameCheckAbort = null;
+            });
+    }
+
+    function nameCheckFailed(reason) {
+        var nc = dialogState.nameCheck;
+        nc.state = 'failed';
+        nc.reason = reason || ("Couldn't reach " + nc.remote + ' to check if this name is taken.');
+        applyBranchBlockToStart();
+        showNameCheck();
+    }
+
+    function showNameCheck() {
+        var nc = dialogState.nameCheck;
+        if (!nc) return;
+        if (nc.state === 'checking') {
+            setBranchCardsMsg('Checking if "' + nc.name + '" is already on ' + nc.remote + '...', false, [
+                ['Cancel', function() {
+                    abortNameCheck();
+                    nameCheckFailed('');
+                }]
+            ]);
+        } else if (nc.state === 'failed') {
+            setBranchCardsMsg(nc.reason, true, [
+                ['Start anyway', function() {
+                    nc.state = 'skipped';
+                    setBranchCardsMsg('', false);
+                    startSession(nc.mode);
+                }],
+                ['Back', function() {
+                    dialogState.nameCheck = null;
+                    setBranchCardsMsg('', false);
+                    applyBranchBlockToStart();
+                }]
+            ]);
+        }
+    }
+
+    // Start stays greyed while "+ New" holds a name that can't be used.
+    function applyBranchBlockToStart() {
+        var checking = !!dialogState.nameCheck && dialogState.nameCheck.state === 'checking';
+        [startTerminalBtn, startChatBtn].forEach(function(b) {
+            if (!b.dataset.label) b.dataset.label = b.textContent;
+            b.textContent = checking ? 'Checking ' + dialogState.nameCheck.remote + '...' : b.dataset.label;
+        });
+        if (dialogState.branchBlocked || checking) {
+            startTerminalBtn.disabled = true; startChatBtn.disabled = true;
+        } else if (dialogState.selectedAgent) {
+            startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+        }
+    }
+
+    // Read "+ New branch" (or, without cards, the plain branch box).
+    function onBranchTyped() {
+        if (!dialogState.cardsOn) {
+            dialogState.selectedBranch = branchInput.value.trim();
+            return;
+        }
+        var bc = window.branchCards;
+        var nc = dialogState.nameCheck;
+        if (nc && nc.name !== branchInput.value.trim()) {
+            abortNameCheck();
+            dialogState.nameCheck = null;
+        }
+        var r = bc.resolveTyped(branchInput.value, bc.withoutDeleted(dialogState.branchData, dialogState.cardStates));
+        if (!r.pick) {
+            // Emptied the box: back to the card that was picked before typing.
+            if (!dialogState.branchPick || dialogState.branchPick.kind === 'new' || dialogState.branchPick.kind === 'blocked') {
+                dialogState.branchPick = { kind: 'workspace' };
+            }
+            setBranchCardsMsg('', false);
+        } else if (r.pick.kind === 'blocked') {
+            dialogState.branchPick = r.pick;
+            setBranchCardsMsg(r.pick.reason, true);
+        } else {
+            dialogState.branchPick = r.pick;
+            setBranchCardsMsg(r.message, false);
+            if (r.pick.kind === 'online') dialogState.openRemotes[r.pick.remote] = true;
+        }
+        syncBranchPick();
+    }
+
+    function pickBranchCard(pick) {
+        dialogState.branchPick = pick;
+        branchInput.value = '';
+        setBranchCardsMsg('', false);
+        syncBranchPick();
+    }
+
+    function syncBranchPick() {
+        var pick = dialogState.branchPick;
+        dialogState.selectedBranch = window.branchCards.branchValueFor(pick);
+        dialogState.branchBlocked = pick && pick.kind === 'blocked' ? pick.reason : '';
+        applyBranchBlockToStart();
+        startPickCheck();
+        renderBranchCards();
+    }
+
+    function abortPickCheck() {
+        if (dialogState.pickCheckAbort) {
+            dialogState.pickCheckAbort.abort();
+            dialogState.pickCheckAbort = null;
+        }
+    }
+
+    function localCard(name) {
+        var cards = (dialogState.branchData && dialogState.branchData.cards) || [];
+        for (var i = 0; i < cards.length; i++) {
+            if (cards[i].kind === 'local' && cards[i].name === name) return cards[i];
+        }
+        return null;
+    }
+
+    // Ask the server what deleting the picked card would lose: 2 git
+    // commands for that one branch, plus its folder size. Picking another
+    // card aborts the request, which stops its git commands on the server.
+    // Re-picking the same card keeps the answer it already has.
+    function startPickCheck() {
+        var pick = dialogState.branchPick;
+        var card = pick && pick.kind === 'local' ? localCard(pick.name) : null;
+        if (!window.branchCards.needsPickCheck(card)) {
+            abortPickCheck();
+            dialogState.pickCheck = null;
+            return;
+        }
+        if (dialogState.pickCheck && dialogState.pickCheck.branch === card.name) return;
+        abortPickCheck();
+        var repoPath = dialogState.repoPath;
+        var branch = card.name;
+        var controller = typeof AbortController === 'function' ? new AbortController() : null;
+        dialogState.pickCheckAbort = controller;
+        dialogState.pickCheck = { branch: branch, state: 'checking', check: null };
+        var mine = function() {
+            return dialogState.repoPath === repoPath && dialogState.pickCheck && dialogState.pickCheck.branch === branch;
+        };
+        fetch('/api/repo/branch-check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: repoPath, branch: branch }),
+            signal: controller ? controller.signal : undefined
+        })
+            .then(function(response) { return response.ok ? response.json() : null; })
+            .then(function(check) {
+                if (!mine()) return;
+                dialogState.pickCheck = check
+                    ? { branch: branch, state: 'done', check: check }
+                    : { branch: branch, state: 'failed', check: null };
+                renderBranchCards();
+            })
+            .catch(function() {
+                if (!mine()) return;
+                dialogState.pickCheck = { branch: branch, state: 'failed', check: null };
+                renderBranchCards();
+            })
+            .finally(function() {
+                if (dialogState.pickCheckAbort === controller) dialogState.pickCheckAbort = null;
+            });
+    }
+
+    function cardKey(pick) {
+        return pick.kind + ':' + (pick.remote || '') + ':' + (pick.name || '');
+    }
+
+    function el(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    function smallButton(label, className, onClick) {
+        var b = el('button', 'branch-card__btn' + (className ? ' ' + className : ''), label);
+        b.type = 'button';
+        b.addEventListener('click', onClick);
+        return b;
+    }
+
+    // One card: a row holding the pick button, then optionally an [x] and a
+    // line below (confirm, reason, Undo). `opts`: pick (null = not
+    // pickable), tags, x ({reason, onDelete, onConfirm} -- reason set =
+    // greyed; leftover folders), del ({reason, onDelete, onConfirm}; a local
+    // branch, whose Delete shows only once picked), action (a button such as
+    // "Switch back to main"), stateKey.
+    function makeBranchCard(label, opts) {
+        opts = opts || {};
+        var bc = window.branchCards;
+        var pick = dialogState.branchPick;
+        var st = opts.stateKey ? dialogState.cardStates[opts.stateKey] : null;
+        var picked = !!opts.pick && bc.samePick(pick, opts.pick);
+
+        var row = el('div', 'branch-card-row' + (picked ? ' branch-card-row--picked' : ''));
+        if (st && (st.state === 'deleted' || st.state === 'undoing')) {
+            // Sketch screen C: the card becomes an Undo strip until the dialog closes.
+            row.className = 'branch-card-row branch-card-row--deleted';
+            row.appendChild(el('span', 'branch-card__name', 'Deleted ' + label));
+            if (st.undoable) {
+                var undo = smallButton(st.state === 'undoing' ? 'Undoing...' : 'Undo', '', function() { undoCardDelete(opts.stateKey); });
+                undo.disabled = st.state === 'undoing';
+                row.appendChild(undo);
+            } else {
+                row.appendChild(el('span', 'branch-card__tag', "can't be undone"));
+            }
+            if (st.reason) row.appendChild(el('div', 'branch-card__line branch-card__line--error', st.reason));
+            return row;
+        }
+
+        var main = el('button', 'branch-card' + (picked ? ' branch-card--picked' : ''));
+        main.type = 'button';
+        main.setAttribute('aria-pressed', picked ? 'true' : 'false');
+        if (opts.pick) {
+            main.dataset.key = cardKey(opts.pick);
+            main.addEventListener('click', function() { pickBranchCard(opts.pick); });
+        } else {
+            main.disabled = true;
+        }
+        if (bc.isBusy(st)) main.disabled = true;
+        main.appendChild(el('span', 'branch-card__name', label));
+        (opts.tags || []).forEach(function(t) {
+            main.appendChild(el('span', 'branch-card__tag', t));
+        });
+        // A leftover folder has no open line, so its busy state is a tag. A
+        // branch card stays open instead (see deletingLine), so the cards
+        // below don't jump.
+        if (!opts.del && st && (st.state === 'checking' || st.state === 'deleting')) {
+            main.appendChild(el('span', 'branch-card__tag branch-card__tag--busy', 'deleting...'));
+        }
+        row.appendChild(main);
+
+        if (opts.action) row.appendChild(opts.action);
+
+        if (opts.x) {
+            var x = el('button', 'branch-card__x' + (opts.x.reason ? ' branch-card__x--off' : ''), '\u2715');
+            x.type = 'button';
+            x.setAttribute('aria-label', (opts.x.reason ? 'Why ' + label + ' cannot be deleted' : 'Delete ' + label));
+            x.dataset.key = 'x:' + opts.stateKey;
+            if (opts.x.reason) {
+                // Greyed but still tappable: the tap shows why. Not
+                // aria-disabled, since it does do something.
+                x.addEventListener('click', function() {
+                    setCardState(opts.stateKey, { type: 'why', reason: opts.x.reason });
+                });
+            } else {
+                x.disabled = bc.isBusy(st) || (st && st.state === 'confirm');
+                x.addEventListener('click', function() { opts.x.onDelete(); });
+            }
+            row.appendChild(x);
+        }
+
+        var del = opts.x || opts.del;
+        if (st && st.state === 'confirm') {
+            // Sketch screen B: confirm inside the card.
+            var line = el('div', 'branch-card__line branch-card__line--confirm');
+            line.appendChild(el('span', 'branch-card__line-text', 'Delete ' + label + '? ' + st.reason));
+            line.appendChild(smallButton('Keep', '', function() { setCardState(opts.stateKey, { type: 'keep' }); }));
+            line.appendChild(smallButton('Delete anyway', 'branch-card__btn--danger', function() { del.onConfirm(); }));
+            row.appendChild(line);
+        } else if (st && (st.state === 'why' || st.state === 'failed')) {
+            row.appendChild(el('div', 'branch-card__line' + (st.state === 'failed' ? ' branch-card__line--error' : ''), st.reason));
+        }
+        if (opts.del && bc.isBusy(st)) {
+            // Stays open until the delete finishes, even once another card
+            // is picked.
+            row.appendChild(deletingLine(label));
+        } else if (opts.del && picked && !(st && st.state === 'confirm')) {
+            // A failed delete keeps its error above a fresh Delete to retry.
+            row.appendChild(pickCheckLine(label, opts.del));
+        }
+        return row;
+    }
+
+    // A branch card while its delete runs: same size as the open card, with
+    // the button greyed so it can't be pressed twice.
+    function deletingLine(label) {
+        var line = el('div', 'branch-card__line');
+        line.appendChild(el('span', 'branch-card__line-text', 'Deleting folder...'));
+        var b = smallButton('Deleting...', 'branch-card__btn--danger', function() {});
+        b.disabled = true;
+        b.setAttribute('aria-label', 'Deleting ' + label);
+        line.appendChild(b);
+        return line;
+    }
+
+    // The picked branch's line: why it can't be deleted, or what deleting
+    // it would lose (once the check answers) and a Delete button.
+    function pickCheckLine(label, del) {
+        if (del.reason) return el('div', 'branch-card__line', del.reason);
+        var pc = dialogState.pickCheck;
+        var line = el('div', 'branch-card__line');
+        if (!pc || pc.state === 'checking') {
+            line.appendChild(el('span', 'branch-card__line-text', 'Checking what deleting would lose...'));
+        } else {
+            var summary = pc.state === 'done'
+                ? window.branchCards.checkSummary(pc.check)
+                : { text: "Couldn't check what would be lost.", risky: true };
+            line.appendChild(el('span', 'branch-card__line-text', summary.text));
+        }
+        var b = smallButton('Delete', 'branch-card__btn--danger', function() { del.onDelete(); });
+        b.setAttribute('aria-label', 'Delete ' + label);
+        line.appendChild(b);
+        return line;
+    }
+
+    // navigator.clipboard exists only in a secure context; a box reached over
+    // plain http on anything but localhost is not one, so fall back to a
+    // hidden textarea (same as homepage-main.js copyText).
+    function copyText(text) {
+        if (window.isSecureContext && navigator.clipboard) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function(resolve, reject) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.top = '-1000px';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+            if (ok) resolve(); else reject(new Error('copy unavailable'));
+        });
+    }
+
+    function sectionTitle(text) {
+        return el('div', 'branch-cards__section', text);
+    }
+
+    function setCardState(key, event) {
+        dialogState.cardStates[key] = window.branchCards.cardStateAfter(dialogState.cardStates[key], event);
+        renderBranchCards();
+    }
+
+    // POST a branch-card write; resolves {ok, status, body}.
+    function postBranchWrite(path, body) {
+        return fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(function(response) {
+            return response.json().catch(function() { return {}; }).then(function(json) {
+                return { ok: response.ok, status: response.status, body: json || {} };
+            });
+        });
+    }
+
+    // Tap Delete / a leftover's [x] (confirmed=false) or "Delete anyway"
+    // (confirmed=true). The server re-checks every time: what the picked
+    // card showed may be stale because an agent saved new work since.
+    function deleteCard(key, endpoint, body, confirmed) {
+        var repoPath = dialogState.repoPath;
+        setCardState(key, { type: confirmed ? 'confirm' : 'tap' });
+        body.path = repoPath;
+        body.confirmed = confirmed;
+        postBranchWrite(endpoint, body)
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    setCardState(key, { type: 'refused', reason: r.body.error || 'Could not delete.' });
+                    return;
+                }
+                setCardState(key, { type: 'server', res: r.body });
+                var st = dialogState.cardStates[key];
+                if (st.state === 'deleted' && body.branch) {
+                    // Deleting the picked card puts the pick back on the workspace.
+                    var pick = dialogState.branchPick;
+                    if (pick && pick.kind === 'local' && pick.name === body.branch) {
+                        pickBranchCard({ kind: 'workspace' });
+                    }
+                    if (dialogState.pickCheck && dialogState.pickCheck.branch === body.branch) {
+                        dialogState.pickCheck = null;
+                    }
+                }
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                setCardState(key, { type: 'refused', reason: 'Could not reach the server.' });
+            });
+    }
+
+    function undoCardDelete(key) {
+        var st = dialogState.cardStates[key];
+        if (!st || !st.undo) return;
+        var repoPath = dialogState.repoPath;
+        setCardState(key, { type: 'undo' });
+        var body = { path: repoPath, branch: st.undo.branch, sha: st.undo.sha, folder: st.undo.folder || '' };
+        postBranchWrite('/api/repo/branch-undo', body)
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    setCardState(key, { type: 'refused', reason: r.body.error || 'Could not undo.' });
+                    return;
+                }
+                setCardState(key, { type: 'undone' });
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                setCardState(key, { type: 'refused', reason: 'Could not reach the server.' });
+            });
+    }
+
+    // Sketch screen E: put the workspace back on the default branch, then
+    // re-list branches (the old branch becomes a card, main stops being one).
+    function switchWorkspaceBack() {
+        var repoPath = dialogState.repoPath;
+        var key = 'workspace:';
+        if (window.branchCards.isBusy(dialogState.cardStates[key])) return;
+        dialogState.cardStates[key] = { state: 'checking' };
+        renderBranchCards();
+        postBranchWrite('/api/repo/switch-default', { path: repoPath })
+            .then(function(r) {
+                if (dialogState.repoPath !== repoPath) return;
+                if (!r.ok) {
+                    dialogState.cardStates[key] = { state: 'failed', reason: r.body.error || 'Could not switch.' };
+                    renderBranchCards();
+                    return;
+                }
+                return fetch('/api/repo/branches?path=' + encodeURIComponent(repoPath))
+                    .then(function(response) { return response.ok ? response.json() : null; })
+                    .then(function(branchData) {
+                        delete dialogState.cardStates[key];
+                        if (branchData && dialogState.repoPath === repoPath) populateBranches(branchData);
+                        else renderBranchCards();
+                    });
+            })
+            .catch(function() {
+                if (dialogState.repoPath !== repoPath) return;
+                dialogState.cardStates[key] = { state: 'failed', reason: 'Could not reach the server.' };
+                renderBranchCards();
+            });
+    }
+
+    function renderBranchCards() {
+        if (!dialogState.cardsOn) return;
+        var bc = window.branchCards;
+        var data = dialogState.branchData;
+        var all = bc.groupCards(data);
+        // Typing in "+ New branch" narrows every list below it.
+        var g = bc.filterGroups(all, branchInput.value);
+        var pick = dialogState.branchPick;
+        var states = dialogState.cardStates;
+        // Re-drawing replaces the buttons; keep keyboard focus where it was.
+        var focusedKey = document.activeElement && document.activeElement.dataset
+            ? document.activeElement.dataset.key : '';
+
+        branchWorkspaceSlot.innerHTML = '';
+        if (g.workspace) {
+            var action = null;
+            if (g.workspace.notDefault) {
+                var wsState = states['workspace:'];
+                var busy = bc.isBusy(wsState);
+                action = smallButton(busy ? 'Switching...' : 'Switch back to ' + (data.defaultBranch || 'main'), 'branch-card__btn--switch', switchWorkspaceBack);
+                // Greyed when a live session uses the workspace; the unsaved
+                // edits check runs on the server when tapped.
+                if (busy || g.workspace.inUse) action.disabled = true;
+                if (g.workspace.inUse) action.title = 'A live session is using the workspace.';
+            }
+            var wsTags = bc.cardTags(g.workspace, data);
+            if (g.workspace.inUse) wsTags.push('in use');
+            branchWorkspaceSlot.appendChild(makeBranchCard(bc.workspaceTitle(g.workspace), {
+                pick: { kind: 'workspace' }, tags: wsTags, action: action, stateKey: 'workspace:'
+            }));
+        }
+        var tip = bc.cleanupTip(all);
+        var tipEl = null;
+        if (tip) {
+            tipEl = el('div', 'branch-cards__tip');
+            tipEl.appendChild(el('div', 'branch-cards__tip-text', tip.text));
+            var promptEl = el('div', 'branch-cards__tip-prompt');
+            promptEl.appendChild(el('span', 'branch-cards__tip-prompt-text', tip.prompt));
+            var copyBtn = smallButton('Copy', '', function() {
+                copyText(tip.prompt).then(function() { flash('Copied'); }, function() { flash('Copy failed'); });
+            });
+            var flash = function(word) {
+                copyBtn.textContent = word;
+                setTimeout(function() { copyBtn.textContent = 'Copy'; }, 1500);
+            };
+            copyBtn.setAttribute('aria-label', 'Copy the clean-up prompt');
+            promptEl.appendChild(copyBtn);
+            tipEl.appendChild(promptEl);
+        }
+        branchNewCard.classList.toggle('branch-card--picked',
+            !!pick && (pick.kind === 'new' || pick.kind === 'blocked'));
+
+        var frag = document.createDocumentFragment();
+        if (tipEl && !g.filtered) frag.appendChild(tipEl);
+        // Branches on this box follow the workspace card directly, with no
+        // heading: the workspace is on this box too.
+        if (g.local.length) {
+            g.local.forEach(function(c) {
+                var key = bc.localKey(c.name);
+                frag.appendChild(makeBranchCard(c.name, {
+                    pick: { kind: 'local', name: c.name },
+                    tags: bc.cardTags(c, data),
+                    stateKey: key,
+                    del: {
+                        reason: c.deletable ? '' : (c.noDeleteReason || "This branch can't be deleted here."),
+                        onDelete: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, false); },
+                        onConfirm: function() { deleteCard(key, '/api/repo/branch-delete', { branch: c.name }, true); }
+                    }
+                }));
+            });
+        }
+        if (g.leftovers.length) {
+            frag.appendChild(sectionTitle('Leftover folders (' + g.leftovers.length + ')'));
+            g.leftovers.forEach(function(l) {
+                var key = bc.leftoverKey(l.folder);
+                var tags = ['no branch'].concat(l.inUse ? ['in use'] : []);
+                var st = states[key];
+                if (st && st.state === 'deleted') {
+                    var gone = el('div', 'branch-card-row branch-card-row--deleted');
+                    gone.appendChild(el('span', 'branch-card__name', 'Removed ' + l.folder));
+                    frag.appendChild(gone);
+                    return;
+                }
+                frag.appendChild(makeBranchCard(l.folder, {
+                    tags: tags,
+                    stateKey: key,
+                    x: {
+                        reason: l.inUse ? 'A live session is using this folder.' : '',
+                        onDelete: function() { deleteCard(key, '/api/repo/leftover-remove', { folder: l.folder }, false); },
+                        onConfirm: function() { deleteCard(key, '/api/repo/leftover-remove', { folder: l.folder }, true); }
+                    }
+                }));
+            });
+        }
+        g.online.forEach(function(group) {
+            // While filtering, a remote with no match is hidden and one with
+            // matches is shown open (without remembering it as opened).
+            if (g.filtered && !group.cards.length) return;
+            var details = document.createElement('details');
+            details.className = 'branch-cards__online';
+            details.open = !!dialogState.openRemotes[group.remote] || !!g.filtered;
+            // Opening a section is what downloads that remote, once per
+            // dialog; after a failure only Retry downloads again. Setting
+            // .open while re-drawing also fires this, which the state check
+            // turns into a no-op.
+            details.addEventListener('toggle', function() {
+                if (g.filtered) return;
+                dialogState.openRemotes[group.remote] = details.open;
+                if (details.open && !dialogState.remoteFetches[group.remote]) fetchRemote(group.remote);
+            });
+            var fs = dialogState.remoteFetches[group.remote];
+            var summary = el('summary', 'branch-cards__section',
+                'Online only: ' + group.remote + ' (' + group.cards.length + ')' +
+                (fs && fs.state === 'fetching' ? ', fetching...' : ''));
+            details.appendChild(summary);
+            if (fs && fs.state === 'fetching') {
+                details.appendChild(el('div', 'branch-card__line', 'Fetching from ' + group.remote + '...'));
+            } else if (fs && fs.state === 'failed') {
+                var failLine = el('div', 'branch-card__line branch-card__line--error');
+                failLine.appendChild(el('span', 'branch-card__line-text', fs.reason));
+                failLine.appendChild(smallButton('Retry', '', function() { fetchRemote(group.remote); }));
+                details.appendChild(failLine);
+            } else if (fs && fs.state === 'done' && !group.cards.length) {
+                details.appendChild(el('div', 'branch-card__line', 'Every branch on ' + group.remote + ' is already on this box.'));
+            }
+            group.cards.forEach(function(c) {
+                // No [x]: deleting an online copy would affect everyone else.
+                details.appendChild(makeBranchCard(c.name, {
+                    pick: { kind: 'online', remote: group.remote, name: c.name },
+                    tags: bc.cardTags(c, data)
+                }));
+            });
+            frag.appendChild(details);
+        });
+        branchCardsSections.innerHTML = '';
+        branchCardsSections.appendChild(frag);
+
+        if (focusedKey) {
+            var again = branchCardsEl.querySelector('[data-key="' + CSS.escape(focusedKey) + '"]');
+            if (again) again.focus();
+        }
+    }
+
+    // Arrow keys move between cards (and "+ New"); Enter/Space pick a card,
+    // which buttons do natively.
+    function onBranchCardsKeydown(e) {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        if (!dialogState.cardsOn) return;
+        var items = Array.prototype.filter.call(
+            branchCardsEl.querySelectorAll('button.branch-card:not(:disabled), #new-session-branch, summary'),
+            function(el) { return el.offsetParent !== null; });
+        var i = items.indexOf(document.activeElement);
+        if (i === -1) return;
+        var next = items[i + (e.key === 'ArrowDown' ? 1 : -1)];
+        if (next) {
+            e.preventDefault();
+            next.focus();
+        }
+    }
+
+    // Apply the settings a recording's "+ New" button carried over, once the
+    // prefilled repo has finished preparing. One-shot.
+    function applyPendingPrefill() {
+        var prefill = dialogState.pendingPrefill;
+        if (!prefill) return;
+        dialogState.pendingPrefill = null;
+        if (prefill.branch) {
+            // With cards, the typed-name rules pick the matching card (or a
+            // new branch); without, the plain box carries the name as before.
+            branchInput.value = prefill.branch;
+            dialogState.selectedBranch = prefill.branch;
+            if (dialogState.cardsOn) {
+                onBranchTyped();
+                // Show what Start will use.
+                var p = dialogState.branchPick;
+                if (p && (p.kind === 'new' || p.kind === 'blocked') && branchNewCard.scrollIntoView) {
+                    branchNewCard.scrollIntoView({ block: 'nearest' });
+                }
+            }
+        } else if (prefill.branchHint) {
+            // Plain shared-checkout recording: no worktree branch, so the field
+            // stays blank (reproducing the shared checkout). Surface the branch
+            // the checkout was on as a non-submitting placeholder so the user
+            // sees it without it forcing a worktree on that branch.
+            setBranchPlaceholder('Leave blank to reuse ' + prefill.branchHint);
+        }
+        if (prefill.extraArgs) {
+            // A recording's flags carry over verbatim -- reproducing the
+            // recorded session is the whole point of "+ New".
+            extraArgsInput.value = prefill.extraArgs;
+            dialogState.extraArgs = prefill.extraArgs;
+        }
+        if (prefill.name) {
+            dialogState.prefillName = prefill.name;
+        }
+    }
+
+    // --- Clone credentials (three-state UX) ---
+    // Rule: apply saved credentials silently; surface fields only when the
+    // user asks (Change) or when auth fails. Same localStorage store the
+    // Settings panel uses: swe-swe-creds:<host> -> {username, token, ...}.
+
+    // Derive the credential host from the URL via the unit-tested pure module
+    // (exposed on window by a module shim in selection.html). Fallback: "".
+    function deriveCloneHost(url) {
+        if (typeof window.parseCloneHost === 'function') {
+            return window.parseCloneHost(url);
+        }
+        return '';
+    }
+
+    function credsKey(host) { return 'swe-swe-creds:' + host; }
+
+    function readCloneCreds(host) {
+        if (!host) return null;
+        try {
+            var raw = localStorage.getItem(credsKey(host));
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) { return null; }
+    }
+
+    // Persist a PAT under the host, preserving any name/email the Settings
+    // panel stored for the same host (we only own username+token here).
+    function writeCloneCreds(host, username, token) {
+        if (!host) return;
+        try {
+            var existing = readCloneCreds(host) || {};
+            existing.username = username || 'x-access-token';
+            existing.token = token || '';
+            localStorage.setItem(credsKey(host), JSON.stringify(existing));
+        } catch (e) {}
+    }
+
+    // Build the /api/repo/prepare body for a clone, attaching credentials only
+    // when a token is present. Never embeds the token in the URL.
+    function buildCloneBody(url, host, username, token) {
+        var body = { mode: 'clone', url: url };
+        if (token) {
+            body.credHost = host;
+            body.credUsername = username || 'x-access-token';
+            body.credToken = token;
+        }
+        return body;
+    }
+
+    function hideCloneCredUI() {
+        if (cloneCredTransparent) cloneCredTransparent.classList.add('dialog__field--hidden');
+        if (cloneCredFields) cloneCredFields.classList.add('dialog__field--hidden');
+        if (cloneCredNotice) cloneCredNotice.style.display = 'none';
+    }
+
+    // TRANSPARENT: saved PAT in use, no fields -- just an unobtrusive line.
+    function showCloneCredTransparent(host) {
+        if (!cloneCredTransparent) return;
+        cloneCredTransparentHost.textContent = host;
+        cloneCredTransparent.classList.remove('dialog__field--hidden');
+        cloneCredFields.classList.add('dialog__field--hidden');
+    }
+
+    // FRESH / REJECTED / Change: reveal fields, host prefilled, token in a
+    // masked (password) input; notice explains why they appeared.
+    function revealCloneCredFields(host, username, token, notice) {
+        if (!cloneCredFields) return;
+        cloneCredHostInput.value = host || '';
+        cloneCredUsernameInput.value = username || 'x-access-token';
+        cloneCredTokenInput.value = token || '';
+        if (notice) {
+            cloneCredNotice.textContent = notice;
+            cloneCredNotice.style.display = 'block';
+        } else {
+            cloneCredNotice.style.display = 'none';
+        }
+        cloneCredTransparent.classList.add('dialog__field--hidden');
+        cloneCredFields.classList.remove('dialog__field--hidden');
+        cloneCredTokenInput.focus();
+    }
+
+    // Pre-seed the (origin, initSha) autosync-trust entry -- the SAME key the
+    // terminal-ui signing/creds auto-restore uses (_signingTrustKey). Its
+    // presence is the user's consent to auto-send stored secrets for this
+    // repo, so seeding it after a user-authenticated clone lets the new
+    // session restore the PAT without a second "trust this device?" prompt.
+    // Preserves any signing fingerprint already bound.
+    function signingTrustKey(initSha) {
+        return 'swe-swe:signing-trust:' + window.location.origin + '|' + initSha;
+    }
+    function preseedCredsTrust(initSha) {
+        if (!initSha) return;
+        try {
+            var raw = localStorage.getItem(signingTrustKey(initSha));
+            var existing = raw ? JSON.parse(raw) : {};
+            localStorage.setItem(signingTrustKey(initSha), JSON.stringify({
+                fingerprint: (existing && existing.fingerprint) || '',
+                savedAt: Date.now()
+            }));
+        } catch (e) {}
+    }
+
+    // Handle a needsAuth response: REJECTED when a stored token was tried and
+    // failed, FRESH otherwise.
+    function handleCloneNeedsAuth(data) {
+        var url = urlInput.value.trim();
+        var host = (data && data.host) || deriveCloneHost(url);
+        var stored = host ? readCloneCreds(host) : null;
+        if (stored && stored.token) {
+            revealCloneCredFields(host, stored.username, stored.token,
+                'Saved ' + host + ' token was rejected - update it?');
+        } else {
+            revealCloneCredFields(host, 'x-access-token', '',
+                'This repository requires authentication. Enter a token to clone.');
+        }
+    }
+
+    // Prepare repo and show post-prepare fields
+    function prepareRepo(body) {
+        showLoading('Preparing repository...');
+        modeSelect.disabled = true;
+        if (whereCombo) whereCombo.setAttribute('disabled', '');
+
+        fetch('/api/repo/prepare', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                return response.json().then(function(data) {
+                    throw new Error(data.error || 'Failed to prepare repository');
+                });
+            }
+            return response.json();
+        })
+        .then(function(data) {
+            // Auth needed: a private clone failed (or a stored token was
+            // rejected). Reveal/rescue the credential fields; do not proceed.
+            if (data && data.needsAuth) {
+                hideLoading();
+                handleCloneNeedsAuth(data);
+                return;
+            }
+            // Phase 3: a fresh clone the user authenticated with a PAT -- seed
+            // the autosync-trust entry so the new session auto-restores the PAT
+            // silently (no second trust prompt).
+            if (body.credToken && data.justCloned && data.initSha) {
+                preseedCredsTrust(data.initSha);
+            }
+            dialogState.repoPath = data.path;
+            // Which host a saved PAT would be filed under, so the background
+            // branch refresh can attach it. Empty for SSH/local remotes.
+            dialogState.remoteHost = data.remoteHost || '';
+            dialogState.isNewProject = data.isNew || false;
+            if (body.mode === 'create' && body.name) {
+                dialogState.projectName = body.name;
+            }
+
+            // Save to history for clone mode
+            if (body.mode === 'clone' && body.url) {
+                saveToRepoHistory(body.url);
+            }
+
+            // Show warning if present
+            if (data.warning) {
+                warningDiv.textContent = data.warning;
+                warningDiv.style.display = 'block';
+            } else {
+                warningDiv.style.display = 'none';
+            }
+
+            // Canonical whereKey is the resolved local repo path so the
+            // session page (which only knows WorkDir) can compute the same key.
+            var whereKey = data.path || dialogState.mode;
+
+            // Show env file hint
+            if (data.hasEnvFile) {
+                envHint.innerHTML = 'Loading environment from <code>.swe-swe/env</code>';
+            } else {
+                envHint.innerHTML = 'Tip: set custom env vars in <code>.swe-swe/env</code>';
+            }
+            envHint.style.display = 'block';
+
+            // Show post-prepare fields
+            postPrepareFields.classList.remove('dialog__field--hidden');
+            loadWhereColor(whereKey);
+
+            if (dialogState.isNewProject || data.nonGit) {
+                hideLoading();
+                enableAgentOnly();
+                applyPendingPrefill();
+            } else {
+                // List branches from local refs only: 4 git commands however
+                // many branches there are. No per-branch checks and no
+                // background download -- together those ran ~180 git commands
+                // per open on a large repo and exhausted the box's open files.
+                return fetch('/api/repo/branches?path=' + encodeURIComponent(data.path))
+                    .then(function(response) {
+                        if (!response.ok) {
+                            throw new Error('Failed to fetch branches');
+                        }
+                        return response.json();
+                    })
+                    .then(function(branchData) {
+                        hideLoading();
+                        populateBranches(branchData);
+                        enableBranchAndAgent();
+                        applyPendingPrefill();
+                    });
+            }
+        })
+        .catch(function(err) {
+            hideLoading();
+            showError(err.message || 'Failed to prepare repository');
+        })
+        .finally(function() {
+            modeSelect.disabled = false;
+            if (whereCombo) whereCombo.removeAttribute('disabled');
+        });
+    }
+
+    // Mode change handler
+    modeSelect.addEventListener('change', function() {
+        var value = modeSelect.value;
+        dialogState.mode = value;
+
+        // A prefill only applies to the Where value it targeted; picking
+        // anything else means the user took over.
+        if (dialogState.pendingPrefill && dialogState.pendingPrefill.whereValue !== value) {
+            dialogState.pendingPrefill = null;
+        }
+
+        // Empty placeholder: hide everything
+        if (!value) {
+            newSessionFields.classList.add('dialog__field--hidden');
+            return;
+        }
+
+        // Show the fields container
+        newSessionFields.classList.remove('dialog__field--hidden');
+
+        // Reset downstream
+        resetDownstream();
+
+        // Show/hide mode-specific fields
+        var isClone = value === 'clone';
+        var isCreate = value === 'create';
+        cloneUrlField.classList.toggle('dialog__field--hidden', !isClone);
+        createNameField.classList.toggle('dialog__field--hidden', !isCreate);
+
+        // For workspace or existing repo paths: auto-trigger prepare
+        if (!isClone && !isCreate) {
+            var body = { mode: 'workspace' };
+            if (value !== 'workspace') {
+                // It's an existing repo path
+                body.path = value;
+            }
+            prepareRepo(body);
+        }
+    });
+
+    // Clone inline Next button
+    function handleCloneNext() {
+        var url = urlInput.value.trim();
+        if (!url) {
+            showError('Please enter a repository URL');
+            return;
+        }
+        hideCloneCredUI();
+        var host = deriveCloneHost(url);
+        var stored = host ? readCloneCreds(host) : null;
+        if (stored && stored.token) {
+            // TRANSPARENT: attach the saved PAT and clone silently.
+            showCloneCredTransparent(host);
+            prepareRepo(buildCloneBody(url, host, stored.username, stored.token));
+        } else {
+            // No stored PAT: try bare. Public repos succeed with no fields;
+            // a private repo comes back needsAuth and reveals the fields.
+            prepareRepo(buildCloneBody(url, host, '', ''));
+        }
+    }
+    cloneNextBtn.addEventListener('click', handleCloneNext);
+    urlInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); handleCloneNext(); }
+    });
+
+    // Credential submit: store the PAT and retry the clone with it.
+    function handleCloneCredSubmit() {
+        var url = urlInput.value.trim();
+        if (!url) { showError('Please enter a repository URL'); return; }
+        var host = (cloneCredHostInput.value || '').trim() || deriveCloneHost(url);
+        var username = (cloneCredUsernameInput.value || '').trim() || 'x-access-token';
+        var token = (cloneCredTokenInput.value || '').trim();
+        if (!token) { showError('Please enter a token'); return; }
+        writeCloneCreds(host, username, token);
+        hideCloneCredUI();
+        prepareRepo(buildCloneBody(url, host, username, token));
+    }
+    if (cloneCredSubmit) {
+        cloneCredSubmit.addEventListener('click', handleCloneCredSubmit);
+    }
+    if (cloneCredTokenInput) {
+        cloneCredTokenInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); handleCloneCredSubmit(); }
+        });
+    }
+
+    // "Change" expands the prefilled (masked) fields for a one-off override.
+    if (cloneCredChange) {
+        cloneCredChange.addEventListener('click', function(e) {
+            e.preventDefault();
+            var url = urlInput.value.trim();
+            var host = deriveCloneHost(url) || (cloneCredHostInput.value || '').trim();
+            var stored = host ? readCloneCreds(host) : null;
+            revealCloneCredFields(host,
+                stored ? stored.username : 'x-access-token',
+                stored ? stored.token : '',
+                '');
+        });
+    }
+
+    // Create inline Next button
+    function handleCreateNext() {
+        var name = nameInput.value.trim();
+        if (!name) {
+            showError('Please enter a project name');
+            return;
+        }
+        prepareRepo({ mode: 'create', name: name });
+    }
+    createNextBtn.addEventListener('click', handleCreateNext);
+    nameInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); handleCreateNext(); }
+    });
+
+    // Color picker handlers
+    newSessionColorInput.addEventListener('input', function() {
+        var color = newSessionColorInput.value;
+        newSessionColorHex.value = color;
+        dialogState.sessionColor = color;
+    });
+
+    newSessionColorHex.addEventListener('change', function() {
+        var val = newSessionColorHex.value.trim();
+        if (!val) {
+            dialogState.sessionColor = '';
+            return;
+        }
+        if (!val.startsWith('#')) val = '#' + val;
+        if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+            newSessionColorInput.value = val;
+            dialogState.sessionColor = val;
+        }
+    });
+
+    newSessionColorClear.addEventListener('click', function() {
+        newSessionColorHex.value = '';
+        dialogState.sessionColor = '';
+        if (window.sweSweTheme) {
+            newSessionColorInput.value = window.sweSweTheme.getCurrentColor();
+        }
+    });
+
+    // Typing into the branch box: with cards it is "+ New branch" and the
+    // typed-name rules decide what it picks; without, it is the branch.
+    branchInput.addEventListener('input', onBranchTyped);
+    branchInput.addEventListener('change', onBranchTyped);
+    if (branchCardsEl) branchCardsEl.addEventListener('keydown', onBranchCardsKeydown);
+
+    // Focusing the branch combo used to collapse every field below it (Agent,
+    // Extra CLI flags, env hint, Start buttons) so the user could not press
+    // Start while the free-entry combo still held uncommitted text. That cure
+    // was worse than the disease: removing those fields from layout shrank the
+    // dialog mid-gesture, so the branch field slid ~150px out from under the
+    // pointer between mousedown and mouseup, the mouseup landed on a different
+    // control, and the document-click handler closed the listbox the same tap
+    // had just opened. It also made Agent unreachable by Tab. The uncommitted
+    // text is now handled where it belongs -- startSession() commits the combo
+    // before reading the branch.
+
+    // Agent selection
+    function selectAgent(label) {
+        if (!label || label.classList.contains('dialog__agent--disabled')) {
+            return;
+        }
+
+        var allLabels = agentsContainer.querySelectorAll('.dialog__agent');
+        allLabels.forEach(function(l) {
+            l.classList.remove('dialog__agent--selected');
+        });
+
+        label.classList.add('dialog__agent--selected');
+        var radio = label.querySelector('input[type="radio"]');
+        if (radio) {
+            radio.checked = true;
+            dialogState.selectedAgent = radio.value;
+            startTerminalBtn.disabled = false; startChatBtn.disabled = false;
+            applyBranchBlockToStart();
+            updateStartHint();
+        }
+    }
+
+    // Keep dialogState in step with what is typed; buildSessionParams reads it.
+    extraArgsInput.addEventListener('input', function() {
+        dialogState.extraArgs = extraArgsInput.value;
+    });
+
+    agentsContainer.addEventListener('click', function(e) {
+        selectAgent(e.target.closest('.dialog__agent'));
+    });
+
+    agentsContainer.addEventListener('keydown', function(e) {
+        var label = e.target.closest('.dialog__agent');
+        if (!label) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selectAgent(label);
+        }
+    });
+
+    // Build the session params (shared by both start buttons).
+    // Mirrors url-builder.js:buildSessionPageUrl -- keep param contract in sync.
+    function buildSessionParams(sessionMode) {
+        var p = new URLSearchParams();
+        p.set('assistant', dialogState.selectedAgent);
+        if (sessionMode && sessionMode !== 'terminal') p.set('session', sessionMode);
+        if (dialogState.isNewProject && dialogState.projectName) {
+            p.set('name', dialogState.projectName);
+        } else if (dialogState.selectedBranch) {
+            p.set('branch', dialogState.selectedBranch);
+        }
+        // Recording prefill: keep the session display name (independent of
+        // the create-mode project name above).
+        if (!dialogState.isNewProject && dialogState.prefillName) {
+            p.set('name', dialogState.prefillName);
+        }
+        if (dialogState.repoPath && dialogState.repoPath !== '/workspace') {
+            p.set('pwd', dialogState.repoPath);
+        }
+        if (dialogState.debug) p.set('debug', '1');
+        if (dialogState.extraArgs) p.set('extra_args', dialogState.extraArgs);
+
+        // color is CSS-only (not read by server), append after canonical params
+        if (dialogState.sessionColor) {
+            p.set('color', dialogState.sessionColor.replace('#', ''));
+            if (dialogState.whereKey && window.sweSweTheme) {
+                window.sweSweTheme.saveColorPreference(
+                    window.sweSweTheme.COLOR_STORAGE_KEYS.REPO_TYPE_PREFIX + dialogState.whereKey,
+                    dialogState.sessionColor
+                );
+            }
+        }
+
+        return p;
+    }
+
+    // Start a session by POSTing the params to /api/session/new. The server
+    // mints the UUID, stages a "new" creation intent, and 302-redirects to
+    // /session/{uuid}; a native form submit follows that redirect. Creation
+    // MUST go through this POST -- a bare navigation to /session/{uuid} no
+    // longer materializes a session (no-ghost-session invariant), so the
+    // staged intent is what grants permission to create.
+    function startSession(sessionMode) {
+        // Read the branch box once more, so text typed and followed straight
+        // by Start is what gets sent.
+        onBranchTyped();
+        if (dialogState.branchBlocked) { showError(dialogState.branchBlocked); return; }
+        if (!dialogState.selectedAgent) { showError('Please select an agent'); return; }
+        var pick = dialogState.branchPick;
+        if (dialogState.cardsOn && pick && pick.kind === 'new') {
+            var remote = window.branchCards.nameCheckRemote(dialogState.branchData);
+            var nc = dialogState.nameCheck;
+            var settled = nc && nc.name === pick.name && (nc.state === 'clear' || nc.state === 'skipped');
+            if (remote && !settled) {
+                if (!(nc && nc.name === pick.name && nc.state === 'checking')) runNameCheck(pick.name, remote, sessionMode);
+                return;
+            }
+        }
+        // The session is being created: a still-running check has nothing
+        // left to update, and must not compete with the create call.
+        abortPickCheck();
+        abortRemoteFetches();
+        // Record this repo as most-recently-used so it sorts to the top of the
+        // Where dropdown next time (per-device recency). repoPath is the
+        // resolved local path, matching the dynamic option's value.
+        recordRepoUsage(dialogState.repoPath);
+        var params = buildSessionParams(sessionMode);
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/api/session/new';
+        params.forEach(function(value, key) {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = value;
+            form.appendChild(input);
+        });
+        // Attach this repo's env-vars blob (if the browser holds one under the
+        // matching (origin, init_sha) key) so the server can inject it BEFORE
+        // the new session spawns. Without this the vars would only arrive via
+        // set_env after spawn -- too late for the process env. Same-origin,
+        // cookie-authenticated POST over the page's TLS: same trust surface as
+        // the set_env WS message. Silently skipped when init_sha is unknown
+        // (non-git repo) or no blob is saved for this repo.
+        var envBlob = readRepoEnvBlob(dialogState.initSha);
+        // Env vars edited in the dialog replace the saved blob for this
+        // session. "This session only" leaves the saved blob alone and tells
+        // the server (env_once) to keep these against the session page's
+        // automatic re-send of the saved one; the other option saves them
+        // first, exactly as the Session Settings Save button would.
+        var envOnce = false;
+        if (envEditing && dialogState.initSha) {
+            var savedBlob = envBlob;
+            envBlob = envTextarea.value;
+            if (envScopeValue() === 'save') {
+                writeRepoEnvBlob(dialogState.initSha, envBlob);
+            } else if (envBlob !== savedBlob) {
+                // Opened but left as saved: nothing one-off about it.
+                envOnce = true;
+            }
+        }
+        // Chat-log archive opt-out: unchecking the dialog checkbox stages an
+        // explicit empty AGENT_CHAT_EXPORT_DIR= into the env blob. The server's
+        // presence-checked default (defaultChatExportEnv) then skips its
+        // {workDir}/agent-chats append, so the streaming export stays off for
+        // this session. Chat sessions only -- terminal sessions never launch
+        // agent-chat, so the override would be inert noise there. No new param:
+        // this is sugar over the same 'env' field the settings panel uses.
+        if (sessionMode === 'chat') {
+            var archiveBox = document.getElementById('new-session-chatlog-archive');
+            if (archiveBox && !archiveBox.checked) {
+                envBlob = (envBlob ? envBlob + '\n' : '') + 'AGENT_CHAT_EXPORT_DIR=';
+            } else if (archiveBox) {
+                // Screenshots picker: what agent-chat's export does with
+                // attachments (none = placeholders, agent-chat's default).
+                envBlob = (envBlob ? envBlob + '\n' : '') + 'AGENT_CHAT_EXPORT_ASSETS=' + chatlogAssetsValue();
+            }
+        }
+        if (envBlob) {
+            var envInput = document.createElement('input');
+            envInput.type = 'hidden';
+            envInput.name = 'env';
+            envInput.value = envBlob;
+            form.appendChild(envInput);
+        }
+        if (envOnce) {
+            var onceInput = document.createElement('input');
+            onceInput.type = 'hidden';
+            onceInput.name = 'env_once';
+            onceInput.value = '1';
+            form.appendChild(onceInput);
+        }
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    // Chat-log screenshots picker: remembered per device, greyed out while
+    // the archive checkbox is off (the pick is kept for next time).
+    var CHATLOG_ASSETS_KEY = 'swe-swe-chatlog-assets';
+    var chatlogAssetsBox = document.getElementById('new-session-chatlog-assets');
+    var chatlogArchiveBox = document.getElementById('new-session-chatlog-archive');
+    function chatlogAssetsValue() {
+        var picked = chatlogAssetsBox && chatlogAssetsBox.querySelector('input[name="chatlog-assets"]:checked');
+        return picked ? picked.value : 'none';
+    }
+    if (chatlogAssetsBox) {
+        try {
+            var savedAssets = localStorage.getItem(CHATLOG_ASSETS_KEY);
+            var savedRadio = savedAssets && chatlogAssetsBox.querySelector('input[name="chatlog-assets"][value="' + savedAssets + '"]');
+            if (savedRadio) savedRadio.checked = true;
+        } catch (e) { /* storage blocked: keep the default */ }
+        chatlogAssetsBox.addEventListener('change', function() {
+            try { localStorage.setItem(CHATLOG_ASSETS_KEY, chatlogAssetsValue()); } catch (e) { /* ignore */ }
+        });
+        var syncChatlogAssets = function() {
+            var on = !chatlogArchiveBox || chatlogArchiveBox.checked;
+            chatlogAssetsBox.disabled = !on;
+            chatlogAssetsBox.style.opacity = on ? '' : '0.45';
+        };
+        if (chatlogArchiveBox) chatlogArchiveBox.addEventListener('change', syncChatlogAssets);
+        syncChatlogAssets();
+    }
+
+    // Read the repo env-vars blob saved by the terminal-ui settings panel,
+    // keyed by (origin, init_sha) -- the same localStorage scheme the panel and
+    // its auto-sync use. Returns '' when initSha is empty or nothing is stored.
+    function readRepoEnvBlob(initSha) {
+        if (!initSha) return '';
+        try {
+            return localStorage.getItem('swe-swe-env:' + window.location.origin + '|' + initSha) || '';
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function writeRepoEnvBlob(initSha, raw) {
+        try {
+            var key = 'swe-swe-env:' + window.location.origin + '|' + initSha;
+            if (!raw || !raw.trim()) localStorage.removeItem(key);
+            else localStorage.setItem(key, raw);
+        } catch (e) { /* storage blocked: the session still gets the vars */ }
+    }
+
+    // Env vars row: the closed row shows only a count of the saved vars (same
+    // rule as the Session Settings pane -- a shared screen never shows secrets
+    // by default); opening it fills the box with them plus the scope choice.
+    // Reset to closed + "This session only" whenever the repo changes.
+    var envField = document.getElementById('new-session-env-field');
+    var envTextarea = document.getElementById('new-session-env-vars');
+    var envScopeBox = document.getElementById('new-session-env-scope');
+    var envEditing = false;
+    function countEnvLines(raw) {
+        return raw.split('\n').filter(function(line) {
+            var t = line.trim();
+            return t && t.charAt(0) !== '#' && t.indexOf('=') > 0;
+        }).length;
+    }
+    function envScopeValue() {
+        var picked = envScopeBox.querySelector('input[name="env-scope"]:checked');
+        return picked ? picked.value : 'once';
+    }
+    function syncEnvField() {
+        if (!envField) return;
+        envEditing = false;
+        envTextarea.value = '';
+        envScopeBox.querySelector('input[value="once"]').checked = true;
+        setAdvRowOpen(envField, false);
+        // No repo identity (non-git folder, new project): nothing saved to
+        // show and nowhere to save, so the row stays out of the way.
+        envField.classList.toggle('dialog__field--hidden', !dialogState.initSha);
+        syncAdvSummaries();
+    }
+
+    // "Appearance & advanced" rows: one line per setting (name, current value,
+    // Change). Opening a row closes the others.
+    var advRows = Array.prototype.slice.call(document.querySelectorAll('.dialog__advanced .adv-row'));
+    function setAdvRowOpen(row, open) {
+        var body = row.querySelector('.adv-row__body');
+        var toggle = row.querySelector('.adv-row__toggle');
+        body.hidden = !open;
+        toggle.textContent = open ? 'Close' : 'Change';
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    function advSummary(key) {
+        if (key === 'color') return newSessionColorHex.value.trim() || 'Default';
+        if (key === 'flags') return extraArgsInput.value.trim() || 'None';
+        if (key === 'chatlog') {
+            if (chatlogArchiveBox && !chatlogArchiveBox.checked) return 'Not archived';
+            var shots = { none: 'placeholders', small: 'small', original: 'original' }[chatlogAssetsValue()];
+            return 'Archived, screenshots: ' + shots;
+        }
+        var saved = readRepoEnvBlob(dialogState.initSha);
+        if (envEditing) {
+            var n = countEnvLines(envTextarea.value);
+            if (envScopeValue() === 'save') return n + ', saved for future sessions';
+            if (envTextarea.value !== saved) return n + ', this session only';
+        }
+        var m = countEnvLines(saved);
+        return m === 0 ? 'None' : m + ' saved';
+    }
+    function syncAdvSummaries() {
+        // Callable (hoisted) before the rows are looked up during page load.
+        if (!advRows) return;
+        advRows.forEach(function(row) {
+            row.querySelector('[data-adv-val]').textContent = advSummary(row.dataset.adv);
+        });
+    }
+    advRows.forEach(function(row) {
+        row.querySelector('.adv-row__toggle').addEventListener('click', function() {
+            var open = row.querySelector('.adv-row__body').hidden;
+            advRows.forEach(function(other) { setAdvRowOpen(other, open && other === row); });
+            if (open && row === envField && !envEditing) {
+                envEditing = true;
+                envTextarea.value = readRepoEnvBlob(dialogState.initSha);
+            }
+            if (open) {
+                var first = row.querySelector('.adv-row__body input[type="text"], .adv-row__body textarea, .adv-row__body input');
+                if (first) first.focus();
+            }
+            syncAdvSummaries();
+        });
+    });
+    var advDetails = document.querySelector('.dialog__advanced');
+    if (advDetails) {
+        // Values set by code (prefill, repo change) fire no events; the rows
+        // are only visible while the section is open, so re-read on opening.
+        advDetails.addEventListener('toggle', syncAdvSummaries);
+        advDetails.addEventListener('input', syncAdvSummaries);
+        advDetails.addEventListener('change', syncAdvSummaries);
+        advDetails.addEventListener('click', syncAdvSummaries);
+    }
+    syncAdvSummaries();
+
+    // Start Agent Terminal session
+    startTerminalBtn.addEventListener('click', function() {
+        startSession('terminal');
+    });
+
+    // Start Agent Chat session
+    startChatBtn.addEventListener('click', function() {
+        startSession('chat');
+    });
+
+    // Dialog open. prefill (optional) carries a recording's settings:
+    // {repoPath, branch, name, extraArgs} -- the Where selection is made
+    // automatically and the rest is applied once the repo has prepared, so
+    // the user can review/tweak everything before starting.
+    window.openNewSessionDialog = function(preSelectedAgent, sessionUUID, debug, prefill) {
+        dialogState.sessionUUID = sessionUUID;
+        dialogState.debug = debug;
+        dialogState.preSelectedAgent = preSelectedAgent || '';
+
+        resetDialog();
+        loadRepoHistory();
+        var reposLoaded = fetchAndPopulateRepos();
+        overlay.style.display = 'flex';
+
+        if (prefill) {
+            dialogState.pendingPrefill = prefill;
+            // Dynamic repo options only exist after /api/repos returns.
+            reposLoaded.then(function() {
+                selectPrefillWhere(prefill);
+            });
+            return;
+        }
+
+        // Open the Where listbox either way -- picking one is the only thing
+        // this dialog does until you have, and the rest of it stays hidden
+        // until then, so there is nothing for the list to obscure.
+        //
+        // How differs by input. With a keyboard, focus the input: it opens the
+        // listbox AND lets you type to filter straight away. On touch, focus
+        // would bring the soft keyboard up over the dialog for no gain, so
+        // call _open() directly -- it shows the list without taking focus.
+        //
+        // Wait for /api/repos either way: _open() renders the options it has,
+        // so opening first meant the list visibly grew a moment later.
+        const whereCombo = document.getElementById('where-combo');
+        var hasPointer = !window.matchMedia || window.matchMedia('(hover: hover)').matches;
+        reposLoaded.then(function() {
+            if (overlay.style.display === 'none') { return; } // closed meanwhile
+            if (dialogState.pendingPrefill) { return; }       // a prefill took over
+            if (!whereCombo) { return; }
+            if (hasPointer && whereCombo._input) {
+                whereCombo._input.focus();
+            } else if (typeof whereCombo._open === 'function') {
+                whereCombo._open();
+            }
+        });
+    };
+
+    // Select the Where option a prefill targets and kick off prepare. If the
+    // option no longer exists (repo deleted), the prefill is abandoned and
+    // the user picks manually.
+    function selectPrefillWhere(prefill) {
+        if (overlay.style.display === 'none') return; // dialog closed meanwhile
+        if (dialogState.pendingPrefill !== prefill) return; // superseded
+        var whereValue = prefill.repoPath || 'workspace';
+        prefill.whereValue = whereValue;
+        modeSelect.value = whereValue;
+        if (modeSelect.value !== whereValue) {
+            dialogState.pendingPrefill = null;
+            return;
+        }
+        if (whereCombo) whereCombo.value = whereValue;
+        modeSelect.dispatchEvent(new Event('change'));
+    }
+
+    // Dialog close
+    function closeDialog() {
+        overlay.style.display = 'none';
+        resetDialog();
+    }
+
+    closeBtn.addEventListener('click', closeDialog);
+
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+            closeDialog();
+        }
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && overlay.style.display === 'flex') {
+            closeDialog();
+        }
+    });
+
+    // Reset downstream when clone/create inputs change
+    urlInput.addEventListener('input', function() {
+        // Hide post-prepare if user modifies URL after prepare
+        postPrepareFields.classList.add('dialog__field--hidden');
+        resetDownstream();
+    });
+    nameInput.addEventListener('input', function() {
+        postPrepareFields.classList.add('dialog__field--hidden');
+        resetDownstream();
+    });
+})();

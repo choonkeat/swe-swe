@@ -1,0 +1,1143 @@
+// mcp is the agent-facing client for swe-swe's MCP-less mode. It calls MCP
+// server tools over unix sockets served by mcp-cli-proxy, so an agent whose
+// native MCP is gated can still reach every tool through its normal shell.
+//
+// The socket directory IS the registry: each mcp-cli-proxy drops one
+// <server>.sock, and `mcp` discovers servers by listing that directory.
+//
+// The command surface mirrors the canonical MCP tool id `mcp__<server>__<tool>`:
+//
+//	mcp                         list servers
+//	mcp <server>                full docs for every tool (what native MCP injects)
+//	mcp <server> <tool> -h      full docs for one tool (from its JSON Schema)
+//	mcp <server> <tool> [flags] call the tool; print its result
+//	mcp <server> --list-resources
+//	                            resources/list + resources/templates/list
+//	mcp <server> --read-resource <uri> [--stdout]
+//	                            resources/read; save contents to a file
+//
+// Options after <server> are dash-prefixed so they can never collide with a
+// tool name, and an older `mcp` rejects them cleanly ("has no tool").
+//
+// Flags are synthesized from each tool's inputSchema. Results render as:
+// text -> stdout, image -> written to a file whose path is printed, structured
+// -> JSON. Blocking tools (e.g. send_message, which waits for the user's reply)
+// simply block until the proxy returns -- there is no client-side timeout. If
+// the proxy sends interim notifications while a call is in flight (a blocking
+// call announces its wait this way), they are relayed to stderr and the client
+// keeps waiting for the real response.
+//
+// Each call starts by printing a one-line <mcp>tip</mcp> reminder to stderr
+// pointing at the tool's -h docs: MCP-less agents never get tool docs
+// injected into context and lose whatever they read at context compaction.
+// It prints BEFORE the call runs (as soon as the tool name resolves) so
+// failures -- which need the docs most -- and long-blocking or killed calls
+// still carry it. Throttled per (server, tool) via marker files in
+// <socket dir>/.remind so a hot loop is not spammed; tune with
+// --remind-help-text-throttle (default 30m, 0 = every call).
+package main
+
+import (
+	"bufio"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"mime"
+	"net"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const defaultSocketDir = "/workspace/.swe-swe/run/mcp"
+
+func socketDir() string {
+	if d := os.Getenv("SWE_MCP_DIR"); d != "" {
+		return d
+	}
+	return defaultSocketDir
+}
+
+// --- MCP wire helpers ---------------------------------------------------------
+
+type tool struct {
+	Name        string          `json:"name"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+	Annotations toolAnnotations `json:"annotations"`
+	Meta        toolMeta        `json:"_meta"`
+}
+
+// toolMeta is the slice of a tool's _meta that `mcp` surfaces: the MCP Apps
+// (SEP-1865) page a tool declares. `ui.resourceUri` is current; the flat
+// "ui/resourceUri" key is the deprecated form, still read for older servers.
+type toolMeta struct {
+	UI struct {
+		ResourceURI string `json:"resourceUri"`
+		// Visibility lists who may call the tool: "model" (the agent) and/or
+		// "app" (its page). Absent means both.
+		Visibility []string `json:"visibility"`
+	} `json:"ui"`
+	FlatResourceURI string `json:"ui/resourceUri"`
+}
+
+// appOnly reports a tool its server meant for its page's buttons, not for the
+// agent to call on its own (_meta.ui.visibility without "model").
+func (t tool) appOnly() bool {
+	if len(t.Meta.UI.Visibility) == 0 {
+		return false
+	}
+	for _, v := range t.Meta.UI.Visibility {
+		if v == "model" {
+			return false
+		}
+	}
+	return true
+}
+
+func (t tool) pageURI() string {
+	if t.Meta.UI.ResourceURI != "" {
+		return t.Meta.UI.ResourceURI
+	}
+	return t.Meta.FlatResourceURI
+}
+
+// toolAnnotations are the MCP tool annotations a native client would surface
+// (title + behavior hints). Pointers distinguish "absent" from "false".
+type toolAnnotations struct {
+	Title           string `json:"title"`
+	ReadOnlyHint    *bool  `json:"readOnlyHint"`
+	DestructiveHint *bool  `json:"destructiveHint"`
+}
+
+type rpcResponse struct {
+	Result json.RawMessage `json:"result"`
+	Error  *rpcError       `json:"error"`
+	// ID and Method distinguish a response (has id) from an interim
+	// notification (has method, no id). Params.Data carries a notification's
+	// human text (e.g. a blocking-call warning from the proxy).
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params struct {
+		Data string `json:"data"`
+	} `json:"params"`
+}
+
+type rpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *rpcError) String() string { return fmt.Sprintf("%s (code %d)", e.Message, e.Code) }
+
+// Error lets rpc return the server's JSON-RPC error as-is, so callers can
+// branch on Code (e.g. -32601 method not found) via errors.As.
+func (e *rpcError) Error() string { return e.String() }
+
+// rpcMethodNotFound is the JSON-RPC code a server returns for a method it
+// does not implement (e.g. resources/read on a tools-only server).
+const rpcMethodNotFound = -32601
+
+// dial connects to a server's socket, mapping "not found" to a friendly error.
+func dial(server string) (net.Conn, error) {
+	sock := filepath.Join(socketDir(), server+".sock")
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		return nil, fmt.Errorf("mcp server %q unavailable (socket %s): %w", server, sock, err)
+	}
+	return conn, nil
+}
+
+// rpc sends one request over conn and returns the matching response. Interim
+// notifications (a line with a "method" and no "id") are relayed to stderr and
+// then skipped -- this is how a blocking call announces the wait, so an early
+// read of the client's captured output is never mistaken for "no reply". There
+// is deliberately no read deadline: blocking tools may take arbitrarily long.
+// Notifications go to os.Stderr directly (a diagnostic side-channel); the tool
+// result still flows through the caller's out/errOut.
+func rpc(conn net.Conn, method string, params any) (json.RawMessage, error) {
+	req := map[string]any{"jsonrpc": "2.0", "id": 1, "method": method}
+	if params != nil {
+		req["params"] = params
+	}
+	line, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := conn.Write(append(line, '\n')); err != nil {
+		return nil, err
+	}
+	sc := bufio.NewScanner(conn)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		var resp rpcResponse
+		if err := json.Unmarshal(sc.Bytes(), &resp); err != nil {
+			return nil, fmt.Errorf("bad response: %w", err)
+		}
+		// Interim notification (no id): relay its text and keep waiting for
+		// the response that matches this request.
+		if len(resp.ID) == 0 && resp.Method != "" {
+			if resp.Params.Data != "" {
+				fmt.Fprintln(os.Stderr, resp.Params.Data)
+			}
+			continue
+		}
+		if resp.Error != nil {
+			return nil, resp.Error
+		}
+		return resp.Result, nil
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("no response from server")
+}
+
+// rpcOnce dials server, sends one request, and closes the connection.
+func rpcOnce(server, method string, params any) (json.RawMessage, error) {
+	conn, err := dial(server)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	return rpc(conn, method, params)
+}
+
+func isMethodNotFound(err error) bool {
+	var re *rpcError
+	return errors.As(err, &re) && re.Code == rpcMethodNotFound
+}
+
+func listTools(server string) ([]tool, error) {
+	conn, err := dial(server)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	result, err := rpc(conn, "tools/list", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Tools []tool `json:"tools"`
+	}
+	if err := json.Unmarshal(result, &payload); err != nil {
+		return nil, fmt.Errorf("parsing tools/list: %w", err)
+	}
+	return payload.Tools, nil
+}
+
+// listServers returns the server names discovered in the socket directory.
+func listServers() []string {
+	entries, err := os.ReadDir(socketDir())
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if n := strings.TrimSuffix(e.Name(), ".sock"); n != e.Name() {
+			names = append(names, n)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// --- JSON Schema -> flags -----------------------------------------------------
+
+type schema struct {
+	Properties map[string]property `json:"properties"`
+	Required   []string            `json:"required"`
+	// RawProperties keeps each property's original JSON so help can surface
+	// schema keywords the typed renderer doesn't model (nested objects, oneOf,
+	// minimum, format, ...) instead of silently dropping them.
+	RawProperties map[string]json.RawMessage `json:"-"`
+}
+
+type property struct {
+	Type        typeName        `json:"type"`
+	Description string          `json:"description"`
+	Enum        []any           `json:"enum"`
+	Items       *itemDef        `json:"items"`
+	Default     json.RawMessage `json:"default"`
+}
+
+type itemDef struct {
+	Type string `json:"type"`
+}
+
+// typeName holds a JSON Schema "type", which may be a single string
+// (`"array"`) or a union expressed as an array (`["null","array"]`). Real MCP
+// schemas use the union form for nullable/optional fields, so a plain `string`
+// field silently dropped it -- the field became "", defaulted to string, and
+// the value was forwarded uncoerced.
+type typeName struct{ names []string }
+
+func (t *typeName) UnmarshalJSON(b []byte) error {
+	var single string
+	if json.Unmarshal(b, &single) == nil {
+		t.names = []string{single}
+		return nil
+	}
+	var arr []string
+	if json.Unmarshal(b, &arr) == nil {
+		t.names = arr
+		return nil
+	}
+	// Unrecognized shape: leave empty so kind() falls back to "string".
+	return nil
+}
+
+// kind returns the canonical type used for coercion and help, ignoring "null"
+// so nullable unions resolve to their real type (e.g. ["null","array"] -> array).
+func (p property) kind() string {
+	for _, n := range p.Type.names {
+		if n != "null" && n != "" {
+			return n
+		}
+	}
+	return "string"
+}
+
+func parseSchema(raw json.RawMessage) schema {
+	var s schema
+	if len(raw) > 0 {
+		json.Unmarshal(raw, &s)
+		var rawView struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if json.Unmarshal(raw, &rawView) == nil {
+			s.RawProperties = rawView.Properties
+		}
+	}
+	return s
+}
+
+// knownPropKeys are the schema keywords printToolHelp renders natively; any
+// other keyword on a property is exotic and gets echoed as raw JSON.
+var knownPropKeys = map[string]bool{
+	"type": true, "description": true, "enum": true, "items": true, "default": true,
+}
+
+// exoticSubset returns the compact JSON of a property's schema keywords that
+// the help renderer does not model, or "" when everything was rendered. This
+// guarantees -h never silently drops schema information. "items" counts as
+// rendered only in its simple {"type": ...} form.
+func exoticSubset(raw json.RawMessage) string {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return ""
+	}
+	extra := map[string]json.RawMessage{}
+	for k, v := range m {
+		if !knownPropKeys[k] {
+			extra[k] = v
+			continue
+		}
+		if k == "items" {
+			var im map[string]json.RawMessage
+			if json.Unmarshal(v, &im) != nil {
+				extra[k] = v // e.g. tuple form: items as an array of schemas
+				continue
+			}
+			delete(im, "type")
+			if len(im) > 0 {
+				extra[k] = v
+			}
+		}
+	}
+	if len(extra) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(extra) // map keys marshal sorted: deterministic output
+	return string(b)
+}
+
+// coerce converts a flag's string value to the Go type the schema calls for.
+func coerce(p property, raw string) (any, error) {
+	switch p.kind() {
+	case "boolean":
+		return strconv.ParseBool(raw)
+	case "integer":
+		return strconv.ParseInt(raw, 10, 64)
+	case "number":
+		return strconv.ParseFloat(raw, 64)
+	case "array", "object":
+		var v any
+		if err := json.Unmarshal([]byte(raw), &v); err != nil {
+			return nil, fmt.Errorf("value must be JSON: %w", err)
+		}
+		return v, nil
+	default: // string or unspecified
+		return raw, nil
+	}
+}
+
+// parseToolArgs turns CLI flags into the tool's arguments object, validated
+// against the schema (types coerced, required flags enforced, enums checked).
+func parseToolArgs(s schema, args []string) (map[string]any, error) {
+	out := map[string]any{}
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.HasPrefix(a, "--") {
+			return nil, fmt.Errorf("unexpected argument %q (flags must start with --)", a)
+		}
+		name := strings.TrimPrefix(a, "--")
+		var valStr string
+		var haveVal bool
+		if eq := strings.IndexByte(name, '='); eq >= 0 {
+			valStr, haveVal = name[eq+1:], true
+			name = name[:eq]
+		}
+		p, ok := s.Properties[name]
+		if !ok {
+			return nil, fmt.Errorf("unknown flag --%s", name)
+		}
+		if !haveVal {
+			if p.kind() == "boolean" {
+				valStr = "true" // bare --flag means true
+			} else {
+				i++
+				if i >= len(args) {
+					return nil, fmt.Errorf("flag --%s requires a value", name)
+				}
+				valStr = args[i]
+			}
+		}
+		v, err := coerce(p, valStr)
+		if err != nil {
+			return nil, fmt.Errorf("--%s: %w", name, err)
+		}
+		if len(p.Enum) > 0 && !enumContains(p.Enum, v) {
+			return nil, fmt.Errorf("--%s: must be one of %v", name, p.Enum)
+		}
+		out[name] = v
+	}
+	for _, req := range s.Required {
+		if _, ok := out[req]; !ok {
+			return nil, fmt.Errorf("missing required flag --%s", req)
+		}
+	}
+	return out, nil
+}
+
+func enumContains(enum []any, v any) bool {
+	for _, e := range enum {
+		if fmt.Sprint(e) == fmt.Sprint(v) {
+			return true
+		}
+	}
+	return false
+}
+
+// --- result rendering ---------------------------------------------------------
+
+type callResult struct {
+	Content           []contentBlock  `json:"content"`
+	StructuredContent json.RawMessage `json:"structuredContent"`
+	IsError           bool            `json:"isError"`
+}
+
+type contentBlock struct {
+	Type     string `json:"type"`
+	Text     string `json:"text"`
+	Data     string `json:"data"`     // base64, for image/audio
+	MimeType string `json:"mimeType"` // for image/audio
+}
+
+// extFor maps a MIME type to a file extension. Parameters are ignored, so the
+// MCP Apps page type "text/html;profile=mcp-app" maps to ".html".
+func extFor(mimeType string) string {
+	mt := strings.ToLower(strings.TrimSpace(mimeType))
+	if parsed, _, err := mime.ParseMediaType(mimeType); err == nil {
+		mt = parsed
+	} else if i := strings.IndexByte(mt, ';'); i >= 0 {
+		mt = strings.TrimSpace(mt[:i])
+	}
+	switch mt {
+	case "text/html":
+		return ".html"
+	case "text/plain":
+		return ".txt"
+	case "text/markdown":
+		return ".md"
+	case "text/css":
+		return ".css"
+	case "text/javascript", "application/javascript":
+		return ".js"
+	case "application/json":
+		return ".json"
+	case "image/svg+xml":
+		return ".svg"
+	case "application/pdf":
+		return ".pdf"
+	case "image/png":
+		return ".png"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".bin"
+	}
+}
+
+// render prints a tool result and returns the process exit code.
+func render(server, toolName string, raw json.RawMessage, out, errOut *os.File) int {
+	var r callResult
+	if err := json.Unmarshal(raw, &r); err != nil {
+		// Not the standard shape; emit as-is.
+		fmt.Fprintln(out, string(raw))
+		return 0
+	}
+	for _, b := range r.Content {
+		switch b.Type {
+		case "text":
+			fmt.Fprintln(out, b.Text)
+		case "image", "audio":
+			data, err := base64.StdEncoding.DecodeString(b.Data)
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to decode %s data: %v\n", b.Type, err)
+				continue
+			}
+			f, err := os.CreateTemp(outDir(), fmt.Sprintf("%s-%s-*%s", server, toolName, extFor(b.MimeType)))
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to create file for %s: %v\n", b.Type, err)
+				continue
+			}
+			f.Write(data)
+			f.Close()
+			fmt.Fprintf(out, "[%s %s saved to %s]\n", b.Type, b.MimeType, f.Name())
+		default:
+			// Unknown block: print its JSON.
+			j, _ := json.Marshal(b)
+			fmt.Fprintln(out, string(j))
+		}
+	}
+	if len(r.StructuredContent) > 0 {
+		var pretty any
+		if json.Unmarshal(r.StructuredContent, &pretty) == nil {
+			j, _ := json.MarshalIndent(pretty, "", "  ")
+			fmt.Fprintln(out, string(j))
+		}
+	}
+	if r.IsError {
+		return 1
+	}
+	return 0
+}
+
+// outDir is where binary tool results and read resources are saved.
+// SWE_MCP_IMAGE_DIR keeps its historical name for compatibility.
+func outDir() string {
+	if d := os.Getenv("SWE_MCP_IMAGE_DIR"); d != "" {
+		return d
+	}
+	return os.TempDir()
+}
+
+// --- resources ----------------------------------------------------------------
+
+type resourceContent struct {
+	URI      string          `json:"uri"`
+	MimeType string          `json:"mimeType"`
+	Text     *string         `json:"text"`
+	Blob     *string         `json:"blob"`
+	Meta     json.RawMessage `json:"_meta"`
+}
+
+// fileSafe turns a resource URI into a temp-file name stem: os.CreateTemp
+// rejects patterns containing a path separator, and "ui://cal/view.html" has
+// several. A trailing ext equal to the one we append is dropped.
+func fileSafe(uri, ext string) string {
+	var b strings.Builder
+	for _, r := range uri {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	s := strings.TrimSuffix(b.String(), ext)
+	s = strings.Trim(s, "_")
+	if len(s) > 80 {
+		s = s[len(s)-80:]
+	}
+	if s == "" {
+		s = "resource"
+	}
+	return s
+}
+
+// runReadResource implements `mcp <server> --read-resource <uri> [--stdout]`.
+// Default: each content entry is written to a file under outDir() and its
+// path printed -- MCP Apps pages are often 100s of KB of bundled HTML/JS, too
+// big to dump into an agent's context. --stdout prints text entries instead.
+// A non-empty _meta on an entry (MCP Apps puts CSP/permission hints there) is
+// printed as `[resource-meta <uri>] <json>` -- on stdout normally, on stderr
+// with --stdout so the content stays pipeable.
+func runReadResource(server string, rest []string, out, errOut *os.File) int {
+	var uri string
+	toStdout := false
+	for _, a := range rest {
+		switch {
+		case a == "--stdout":
+			toStdout = true
+		case uri == "" && !strings.HasPrefix(a, "-"):
+			uri = a
+		default:
+			fmt.Fprintf(errOut, "mcp: unexpected argument %q (usage: mcp %s --read-resource <uri> [--stdout])\n", a, server)
+			return 1
+		}
+	}
+	if uri == "" {
+		fmt.Fprintf(errOut, "mcp: missing <uri> (usage: mcp %s --read-resource <uri> [--stdout])\n", server)
+		return 1
+	}
+
+	raw, err := rpcOnce(server, "resources/read", map[string]any{"uri": uri})
+	if err != nil {
+		if isMethodNotFound(err) {
+			fmt.Fprintf(errOut, "mcp: %s does not serve resources\n", server)
+		} else {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+		}
+		return 1
+	}
+	var r struct {
+		Contents []resourceContent `json:"contents"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		fmt.Fprintf(errOut, "mcp: parsing resources/read: %v\n", err)
+		return 1
+	}
+	if len(r.Contents) == 0 {
+		fmt.Fprintf(errOut, "mcp: %s returned no contents for %s\n", server, uri)
+		return 1
+	}
+
+	code := 0
+	metaOut := out
+	if toStdout {
+		metaOut = errOut
+	}
+	for _, c := range r.Contents {
+		cURI := c.URI
+		if cURI == "" {
+			cURI = uri
+		}
+		var data []byte
+		switch {
+		case c.Text != nil:
+			data = []byte(*c.Text)
+		case c.Blob != nil:
+			if toStdout {
+				fmt.Fprintf(errOut, "mcp: %s is binary (%s); omit --stdout to save it to a file\n", cURI, c.MimeType)
+				code = 1
+				continue
+			}
+			data, err = base64.StdEncoding.DecodeString(*c.Blob)
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to decode blob for %s: %v\n", cURI, err)
+				code = 1
+				continue
+			}
+		default:
+			fmt.Fprintf(errOut, "mcp: %s has neither text nor blob\n", cURI)
+			code = 1
+			continue
+		}
+
+		if toStdout {
+			out.Write(data)
+			if len(data) > 0 && data[len(data)-1] != '\n' {
+				fmt.Fprintln(out)
+			}
+		} else {
+			ext := extFor(c.MimeType)
+			f, err := os.CreateTemp(outDir(), fmt.Sprintf("%s-%s-*%s", server, fileSafe(cURI, ext), ext))
+			if err != nil {
+				fmt.Fprintf(errOut, "mcp: failed to create file for %s: %v\n", cURI, err)
+				code = 1
+				continue
+			}
+			_, werr := f.Write(data)
+			cerr := f.Close()
+			if werr != nil || cerr != nil {
+				fmt.Fprintf(errOut, "mcp: failed to write %s: %v\n", f.Name(), errors.Join(werr, cerr))
+				code = 1
+				continue
+			}
+			fmt.Fprintf(out, "[resource %s %s saved to %s]\n", cURI, c.MimeType, f.Name())
+		}
+
+		if m := compactMeta(c.Meta); m != "" {
+			fmt.Fprintf(metaOut, "[resource-meta %s] %s\n", cURI, m)
+		}
+	}
+	return code
+}
+
+// compactMeta renders a _meta value as one JSON line, or "" when absent/empty.
+func compactMeta(raw json.RawMessage) string {
+	m := strings.TrimSpace(string(raw))
+	if m == "" || m == "null" || m == "{}" {
+		return ""
+	}
+	if b, err := json.Marshal(json.RawMessage(raw)); err == nil {
+		return string(b)
+	}
+	return m
+}
+
+type resourceEntry struct {
+	URI         string          `json:"uri"`
+	URITemplate string          `json:"uriTemplate"`
+	Name        string          `json:"name"`
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	MimeType    string          `json:"mimeType"`
+	Meta        json.RawMessage `json:"_meta"`
+}
+
+// listPaged calls a paginated list method (resources/list,
+// resources/templates/list), following nextCursor, and returns the entries
+// under key.
+func listPaged(server, method, key string) ([]resourceEntry, error) {
+	var all []resourceEntry
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+		raw, err := rpcOnce(server, method, params)
+		if err != nil {
+			return nil, err
+		}
+		var r map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return nil, fmt.Errorf("parsing %s: %w", method, err)
+		}
+		var entries []resourceEntry
+		if len(r[key]) > 0 {
+			if err := json.Unmarshal(r[key], &entries); err != nil {
+				return nil, fmt.Errorf("parsing %s: %w", method, err)
+			}
+		}
+		all = append(all, entries...)
+		cursor = ""
+		if len(r["nextCursor"]) > 0 {
+			json.Unmarshal(r["nextCursor"], &cursor)
+		}
+		if cursor == "" {
+			break
+		}
+	}
+	return all, nil
+}
+
+func printResourceEntry(out *os.File, id string, e resourceEntry) {
+	label := e.Title
+	if label == "" {
+		label = e.Name
+	}
+	fmt.Fprintf(out, "%s", id)
+	for _, f := range []string{e.MimeType, label} {
+		if f != "" {
+			fmt.Fprintf(out, "  %s", f)
+		}
+	}
+	fmt.Fprintln(out)
+	if e.Description != "" {
+		for _, l := range strings.Split(strings.TrimRight(e.Description, "\n"), "\n") {
+			fmt.Fprintf(out, "    %s\n", l)
+		}
+	}
+	if m := compactMeta(e.Meta); m != "" {
+		fmt.Fprintf(out, "    meta: %s\n", m)
+	}
+}
+
+// runListResources implements `mcp <server> --list-resources`: resources/list
+// plus resources/templates/list. A server without resources/list fails
+// (exit 1); one that lists resources but not templates just gets a note.
+func runListResources(server string, rest []string, out, errOut *os.File) int {
+	if len(rest) > 0 {
+		fmt.Fprintf(errOut, "mcp: unexpected argument %q (usage: mcp %s --list-resources)\n", rest[0], server)
+		return 1
+	}
+	resources, err := listPaged(server, "resources/list", "resources")
+	if err != nil {
+		if isMethodNotFound(err) {
+			fmt.Fprintf(errOut, "mcp: %s does not serve resources\n", server)
+		} else {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+		}
+		return 1
+	}
+	if len(resources) == 0 {
+		fmt.Fprintln(out, "(no resources)")
+	}
+	for _, e := range resources {
+		printResourceEntry(out, e.URI, e)
+	}
+
+	templates, err := listPaged(server, "resources/templates/list", "resourceTemplates")
+	switch {
+	case isMethodNotFound(err):
+		fmt.Fprintf(out, "\n(%s does not list resource templates)\n", server)
+	case err != nil:
+		fmt.Fprintf(errOut, "mcp: resources/templates/list: %v\n", err)
+	case len(templates) > 0:
+		fmt.Fprintf(out, "\nTemplates (fill in {params}, then --read-resource):\n")
+		for _, e := range templates {
+			printResourceEntry(out, e.URITemplate, e)
+		}
+	}
+	fmt.Fprintf(out, "\nRead one: mcp %s --read-resource <uri> [--stdout]\n", server)
+	return 0
+}
+
+// --- help ---------------------------------------------------------------------
+
+func printTopHelp(out *os.File) {
+	servers := listServers()
+	// Full docs for every server print FIRST -- bare `mcp -h` is the one
+	// command steering points agents at, so it must carry the entire registry
+	// (the byte-for-byte equivalent of what a native MCP client would inject).
+	// The short usage summary and server list print LAST: the dump is long,
+	// and the orientation an agent acts on next belongs closest to the end.
+	// A server whose socket won't answer degrades to an inline note instead
+	// of killing the dump.
+	for _, s := range servers {
+		fmt.Fprintf(out, "===== %s =====\n\n", s)
+		if err := printServerHelp(s, out); err != nil {
+			fmt.Fprintf(out, "(failed to load tools: %v)\n", err)
+		}
+		fmt.Fprint(out, "\n")
+	}
+	fmt.Fprint(out, `mcp - call MCP server tools over unix sockets (swe-swe MCP-less mode)
+
+Usage:
+  mcp <server> <tool> [flags]   call a tool
+  mcp -h                        full docs for every server and tool (above)
+  mcp <server>                  full docs for one server's tools
+  mcp <server> <tool> -h        full docs for one tool
+  mcp <server> --list-resources list the server's MCP resources (+ templates)
+  mcp <server> --read-resource <uri> [--stdout]
+                                read a resource; saves each content entry to a
+                                file and prints its path (--stdout: print text)
+
+A tool whose docs show "page: <uri>" declares an MCP Apps page; fetch it with
+--read-resource. Content _meta (CSP/permission hints) prints as one line:
+  [resource-meta <uri>] {...}
+
+Global flags:
+  --remind-help-text-throttle duration
+      how often the pre-call <mcp>tip</mcp> docs reminder re-prints per tool
+      (default 30m; 0 = every call)
+
+The command mirrors the tool id mcp__<server>__<tool>:
+  mcp__swe-swe-agent-chat__send_message  ->  mcp swe-swe-agent-chat send_message --text "..."
+`)
+	if len(servers) == 0 {
+		fmt.Fprintf(out, "\nNo servers found in %s\n", socketDir())
+		return
+	}
+	fmt.Fprintf(out, "\nServers (from %s):\n", socketDir())
+	for _, s := range servers {
+		fmt.Fprintf(out, "  %s\n", s)
+	}
+}
+
+// printServerHelp dumps every tool's full help -- the byte-for-byte equivalent
+// of what a native MCP client would inject into the agent's context.
+func printServerHelp(server string, out *os.File) error {
+	tools, err := listTools(server)
+	if err != nil {
+		return err
+	}
+	for i := range tools {
+		if i > 0 {
+			fmt.Fprintf(out, "\n---\n\n")
+		}
+		printToolHelp(server, tools[i], out)
+	}
+	return nil
+}
+
+// annotationLine renders the tool's title and behavior hints, mirroring what a
+// native MCP client would surface from `title` / `annotations`.
+func annotationLine(t tool) string {
+	title := t.Annotations.Title
+	if title == "" {
+		title = t.Title
+	}
+	var marks []string
+	if t.Annotations.ReadOnlyHint != nil && *t.Annotations.ReadOnlyHint {
+		marks = append(marks, "[read-only]")
+	}
+	if t.Annotations.DestructiveHint != nil && *t.Annotations.DestructiveHint {
+		marks = append(marks, "[destructive]")
+	}
+	parts := title
+	if len(marks) > 0 {
+		if parts != "" {
+			parts += "  "
+		}
+		parts += strings.Join(marks, " ")
+	}
+	return parts
+}
+
+// typeLabel names a flag's value type, expanding simple array item types
+// ("array of string") so the agent knows what JSON to pass.
+func typeLabel(p property) string {
+	k := p.kind()
+	if k == "array" && p.Items != nil && p.Items.Type != "" {
+		return "array of " + p.Items.Type
+	}
+	return k
+}
+
+// defaultLabel renders a schema default: bare for strings, JSON otherwise.
+func defaultLabel(p property) string {
+	if len(p.Default) == 0 || string(p.Default) == "null" {
+		return ""
+	}
+	var s string
+	if json.Unmarshal(p.Default, &s) == nil {
+		return s
+	}
+	return string(p.Default)
+}
+
+func enumLabel(enum []any) string {
+	vals := make([]string, len(enum))
+	for i, e := range enum {
+		vals[i] = fmt.Sprint(e)
+	}
+	return strings.Join(vals, ", ")
+}
+
+func printToolHelp(server string, t tool, out *os.File) {
+	fmt.Fprintf(out, "mcp %s %s [flags]\n", server, t.Name)
+	if line := annotationLine(t); line != "" {
+		fmt.Fprintf(out, "%s\n", line)
+	}
+	if uri := t.pageURI(); uri != "" {
+		fmt.Fprintf(out, "page: %s  (mcp %s --read-resource %s)\n", uri, server, uri)
+	}
+	if t.appOnly() {
+		fmt.Fprintf(out, "page-only: meant for its page's buttons; call it only to carry out a click the user made in that page\n")
+	}
+	if t.Description != "" {
+		fmt.Fprintf(out, "\n%s\n", t.Description)
+	}
+	s := parseSchema(t.InputSchema)
+	if len(s.Properties) == 0 {
+		fmt.Fprintf(out, "\n(no flags)\n")
+		return
+	}
+	required := map[string]bool{}
+	for _, r := range s.Required {
+		required[r] = true
+	}
+	// Required flags first, then optional; alphabetical within each group.
+	var reqNames, optNames []string
+	for n := range s.Properties {
+		if required[n] {
+			reqNames = append(reqNames, n)
+		} else {
+			optNames = append(optNames, n)
+		}
+	}
+	sort.Strings(reqNames)
+	sort.Strings(optNames)
+	fmt.Fprintf(out, "\nFlags:\n")
+	for _, n := range append(reqNames, optNames...) {
+		p := s.Properties[n]
+		var attrs []string
+		if required[n] {
+			attrs = append(attrs, "required")
+		}
+		if d := defaultLabel(p); d != "" {
+			attrs = append(attrs, "default: "+d)
+		}
+		head := fmt.Sprintf("--%s %s", n, typeLabel(p))
+		if len(attrs) > 0 {
+			head += " (" + strings.Join(attrs, ", ") + ")"
+		}
+		fmt.Fprintf(out, "  %s\n", head)
+		if p.Description != "" {
+			for _, line := range strings.Split(strings.TrimRight(p.Description, "\n"), "\n") {
+				fmt.Fprintf(out, "      %s\n", line)
+			}
+		}
+		if len(p.Enum) > 0 {
+			fmt.Fprintf(out, "      one of: %s\n", enumLabel(p.Enum))
+		}
+		if ex := exoticSubset(s.RawProperties[n]); ex != "" {
+			fmt.Fprintf(out, "      schema: %s\n", ex)
+		}
+	}
+}
+
+// --- post-call -h reminder ------------------------------------------------
+
+// maybeRemindHelp prints a one-line <mcp>tip</mcp> to errOut ahead of a tool
+// call, pointing at the tool's own -h docs. MCP-less agents never get tool
+// docs injected into context and lose whatever they did read at context
+// compaction -- and compaction is invisible to them, so the nudge must come
+// from outside. Throttled per (server, tool) via a marker file's mtime under
+// <socket dir>/.remind (never listed as a server: no .sock suffix). throttle
+// 0 prints on every call. State errors fail open: the reminder matters more
+// than the bookkeeping.
+func maybeRemindHelp(server, tool string, throttle time.Duration, errOut *os.File) {
+	dir := filepath.Join(socketDir(), ".remind")
+	marker := filepath.Join(dir, server+"__"+tool)
+	if throttle > 0 {
+		if fi, err := os.Stat(marker); err == nil && time.Since(fi.ModTime()) < throttle {
+			return
+		}
+	}
+	fmt.Fprintf(errOut, "<mcp>tip: this tool's docs are not in your context and fade after compaction; refresh: mcp %s %s -h (all tools: mcp %s -h)</mcp>\n", server, tool, server)
+	os.MkdirAll(dir, 0o755)
+	os.WriteFile(marker, nil, 0o644)
+}
+
+// remindFlag is the global flag controlling the reminder throttle.
+const remindFlag = "--remind-help-text-throttle"
+
+// extractThrottleFlag strips --remind-help-text-throttle[=]<duration> from
+// args (any position) and returns the remaining args plus the throttle to
+// use. Accepts Go durations ("30m", "1h"); "0" prints the tip on every call.
+func extractThrottleFlag(args []string) ([]string, time.Duration, error) {
+	throttle := 30 * time.Minute
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		var raw string
+		switch {
+		case a == remindFlag:
+			i++
+			if i >= len(args) {
+				return nil, 0, fmt.Errorf("flag %s requires a value", remindFlag)
+			}
+			raw = args[i]
+		case strings.HasPrefix(a, remindFlag+"="):
+			raw = a[len(remindFlag)+1:]
+		default:
+			rest = append(rest, a)
+			continue
+		}
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			return nil, 0, fmt.Errorf("%s: %w", remindFlag, err)
+		}
+		throttle = d
+	}
+	return rest, throttle, nil
+}
+
+func isHelp(a string) bool { return a == "-h" || a == "--help" || a == "help" }
+
+// --- main ---------------------------------------------------------------------
+
+func run(args []string, out, errOut *os.File) int {
+	args, throttle, err := extractThrottleFlag(args)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+	if len(args) == 0 || isHelp(args[0]) {
+		printTopHelp(out)
+		return 0
+	}
+	server := args[0]
+	if len(args) == 1 || isHelp(args[1]) {
+		if err := printServerHelp(server, out); err != nil {
+			fmt.Fprintf(errOut, "mcp: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(out, "\n---\n\nResources (if %s serves any): mcp %s --list-resources | --read-resource <uri> [--stdout]\n", server, server)
+		return 0
+	}
+	toolName := args[1]
+	rest := args[2:]
+
+	// Dash-prefixed options route BEFORE tool lookup: no tool name can start
+	// with "-", so these never shadow a real tool.
+	if strings.HasPrefix(toolName, "-") {
+		switch toolName {
+		case "--read-resource":
+			return runReadResource(server, rest, out, errOut)
+		case "--list-resources":
+			return runListResources(server, rest, out, errOut)
+		default:
+			fmt.Fprintf(errOut, "mcp: unknown option %q (run: mcp -h)\n", toolName)
+			return 1
+		}
+	}
+
+	tools, err := listTools(server)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+	var t *tool
+	for i := range tools {
+		if tools[i].Name == toolName {
+			t = &tools[i]
+			break
+		}
+	}
+	if t == nil {
+		fmt.Fprintf(errOut, "mcp: %s has no tool %q (run: mcp %s -h)\n", server, toolName, server)
+		return 1
+	}
+
+	if len(rest) > 0 && isHelp(rest[0]) {
+		printToolHelp(server, *t, out)
+		return 0
+	}
+
+	// Tip goes out BEFORE the call: failed calls (bad flags, tool errors) need
+	// the docs pointer most, and a blocking call killed mid-wait still carried
+	// it. Printed only once the tool name resolved, so the refresh command it
+	// suggests is guaranteed to work.
+	maybeRemindHelp(server, toolName, throttle, errOut)
+
+	s := parseSchema(t.InputSchema)
+	arguments, err := parseToolArgs(s, rest)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+
+	conn, err := dial(server)
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+	defer conn.Close()
+	result, err := rpc(conn, "tools/call", map[string]any{"name": toolName, "arguments": arguments})
+	if err != nil {
+		fmt.Fprintf(errOut, "mcp: %v\n", err)
+		return 1
+	}
+	return render(server, toolName, result, out, errOut)
+}
+
+func main() {
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}

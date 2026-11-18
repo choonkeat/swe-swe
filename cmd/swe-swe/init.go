@@ -357,7 +357,12 @@ type InitConfig struct {
 	// WithoutMCP is MCP-less mode (host runtime only): no agent MCP config is
 	// written and `swe-swe up` exports SWE_MCP_LESS=1 so the server runs the
 	// mcp-cli-proxy fleet and the agent uses the `mcp` CLI.
-	WithoutMCP       bool   `json:"withoutMCP,omitempty"`
+	WithoutMCP bool `json:"withoutMCP,omitempty"`
+	// WithMCPApps opts in to MCP Apps (tool pages): swe-swe tells MCP servers
+	// it can show pages. Off by default. Today it takes effect only with
+	// --without-mcp (the mcp-cli-proxy fleet runs with --advertise-ui);
+	// native-MCP sessions ignore it until agent-chat ships `wrap`.
+	WithMCPApps      bool   `json:"withMCPApps,omitempty"`
 	TunnelServerURL  string `json:"tunnelServerURL,omitempty"`
 	TunnelUnique     string `json:"tunnelUnique,omitempty"`
 	TunnelClientCert string `json:"tunnelClientCert,omitempty"`
@@ -785,6 +790,7 @@ func handleInit() {
 	dockerless := fs.Bool("dockerless", false, "Initialize a host-native setup with no Docker (dumps the embedded binaries + wiring into .swe-swe; Linux, or macOS experimentally)")
 	runtimeFlag := fs.String("runtime", DefaultRuntime, "Where the environment runs: 'container' (docker compose), 'container-with-docker-socket' (compose plus the host docker socket), or 'host' (no containers; Linux, or macOS experimentally)")
 	withoutMCP := fs.Bool("without-mcp", false, "MCP-less mode (--runtime=host only): write no agent MCP config; swe-swe-server runs one mcp-cli-proxy per MCP server per session and the agent reaches every tool through the bundled mcp CLI over unix sockets. For hosts where the agent's native MCP client is gated.")
+	withMCPApps := fs.Bool("with-mcp-apps", false, "Opt in to MCP Apps (tool pages shown in chat): swe-swe tells MCP servers it can show pages, so servers that hide pages from plain clients send them. Tools still return their plain text. Takes effect with --without-mcp only, for now.")
 	// Note: dockerfile-only mode is auto-detected (no SSL + no tunnel = dockerfile-only)
 	slashCommands := fs.String("with-slash-commands", "", "Git repos to clone as slash commands (space-separated, format: [alias@]<git-url>)")
 	skills := fs.String("with-skills", "", "Git repos to clone as skills (space-separated, format: [alias@]<git-url>)")
@@ -1134,6 +1140,9 @@ func handleInit() {
 		if !explicitFlags["without-mcp"] {
 			*withoutMCP = savedConfig.WithoutMCP
 		}
+		if !explicitFlags["with-mcp-apps"] {
+			*withMCPApps = savedConfig.WithMCPApps
+		}
 		if len(explicitFlags) > 0 {
 			fmt.Printf("Reusing saved configuration from %s (with overrides)\n", initConfigPath)
 		} else {
@@ -1188,6 +1197,7 @@ func handleInit() {
 		Dockerless:  *dockerless,
 		Runtime:     resolvedRuntime,
 		WithoutMCP:  *withoutMCP,
+		WithMCPApps: *withMCPApps,
 		// Tunnel mode forces the full compose template path (not the
 		// dockerfile-only shim) so the {{IF TUNNEL}} / {{IF NO_TUNNEL}}
 		// branches in docker-compose.yml take effect: drop traefik:

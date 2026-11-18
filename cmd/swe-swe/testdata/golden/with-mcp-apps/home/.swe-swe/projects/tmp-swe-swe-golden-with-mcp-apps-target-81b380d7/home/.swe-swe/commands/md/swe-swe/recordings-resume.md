@@ -1,0 +1,103 @@
+---
+description: Resume an orphaned swe-swe recording (by id) by replying with a click-to-resume fork link
+---
+
+Resume the ended session recording identified by `$ARGUMENTS` by replying in chat
+with a **click-to-resume link**. Clicking it forks the recording into a new live
+session that has BOTH the agent's full conversation (native `--resume`) AND the web
+chat panel's history bubbles restored.
+
+`$ARGUMENTS` is the recording id (full UUID or its first 8+ chars) as shown by
+`/swe-swe:recordings-list-orphaned`. Optionally a second token `bubble=<seq>` to
+fork at a specific chat bubble instead of the tail (advanced; default resumes from
+the end).
+
+## How this works (no server change, no headless auth)
+
+The server's existing `GET /api/fork/{recordingUUID}` endpoint already resumes the
+agent AND prepopulates the new session's chat log from the source `.events.jsonl`,
+and it works on **ended** recordings, not just live ones. We don't need to call it
+from here -- we just hand the user a **root-relative markdown link** to it:
+
+```
+[Resume <name> (forked)](/api/fork/<full-recordingUUID>)
+```
+
+The chat iframe is handed the parent (swe-swe) window URL via `parent_url`, so a
+root-relative link resolves against the swe-swe page the user sees. The user's browser
+is already authenticated, so clicking does the authenticated GET -> 302 ->
+`/session/<newUUID>` -> the browser (as the WS client) materializes the resumed
+session. Auth and materialization are handled entirely by the click; this command does
+no login and no `curl`.
+
+`/api/fork` supports **claude and codex** chat sessions only. For other agents there
+is no fork link; use the `create_session` fallback (step 4), which restores the
+agent's memory but leaves the chat panel empty.
+
+## Steps
+
+### 1. Resolve the recording and read metadata
+
+```bash
+REC=/workspace/.swe-swe/recordings
+ID="$ARGUMENTS"; ID="${ID%% *}"          # strip any trailing "bubble=<seq>"
+meta=$(ls -1 "$REC/session-$ID"*.metadata.json 2>/dev/null | grep -vE 'session-[0-9a-f-]{36}-[0-9a-f-]{36}\.metadata\.json$' | head -1)
+echo "stem=$(basename "${meta%.metadata.json}")"   # -> session-<full recordingUUID>
+jq '{name, agent_binary, session_mode, work_dir, branch_name, agent_session_id}' "$meta"
+```
+
+Take the FULL recordingUUID from the file stem (`session-<UUID>.metadata.json`), not
+the short id.
+
+**If no metadata file matches**, the id may be a LIVE session uuid (a live session's
+uuid is distinct from its on-disk recording uuid, and live recordings aren't in the
+ended list). Call `mcp__swe-swe__list_sessions` and look for a session whose `uuid`
+starts with the id. If found, this is a **fork of a live session**: `/api/fork`
+resolves live sessions in-memory, so use that session's FULL `uuid` directly in the
+link (skip the disk read; treat `assistant` from list_sessions as `agent_binary`, and
+assume `chat` mode for agent-chat sessions). If still nothing matches, tell the user
+the id was not found (suggest `/swe-swe:recordings-list-orphaned`) and stop.
+
+Guards:
+- `session_mode` must be `chat` (else `/api/fork` rejects it) -- stop with a note.
+- `agent_binary` must be `claude` or `codex` for the fork link; otherwise go to step 4.
+- Forking a LIVE session: `/api/fork` refuses (409) if its agent is mid-work with an
+  unresolved tool call -- if the user reports that, tell them to retry once the source
+  session is idle. (Forking the user's OWN current session is fine and creates a
+  parallel branch from the last chat reply.)
+
+### 2. Already-active check
+
+Call `mcp__swe-swe__list_sessions`. If an active session already has this recording's
+`work_dir` (and branch, when set), warn that the conversation may already be live and
+ask before handing over the link.
+
+### 3. Reply with the click-to-resume link
+
+Build the path. Default forks at the tail (resume where it left off):
+
+```
+/api/fork/<full-recordingUUID>
+```
+
+If the user passed `bubble=<seq>`, append `?bubble=<seq>&mode=after` (or the mode they
+named: `after` continues past that bubble, `before`/`replay` rewind to it).
+
+Send a `send_message` whose text contains the markdown link, e.g.:
+
+> Resume **<name>** (last active <ended>): [open the resumed session](/api/fork/<full-recordingUUID>)
+>
+> Clicking forks the recording into a fresh live session with the full chat history in
+> the panel and the agent reattached to the exact prior conversation. (It's a fork, so
+> the original recording stays intact -- you can resume it again later.)
+
+Do NOT fabricate a host or port; keep the link root-relative. The iframe's `parent_url`
+makes it resolve against the user's current swe-swe origin.
+
+### 4. Fallback for non-claude/codex agents (chat panel NOT prefilled)
+
+Only if step 1 found an unsupported agent and the user opts in: call
+`mcp__swe-swe__create_session` with `assistant`=agent, `repo_path`/`branch` derived
+from `work_dir`/`branch_name`, and `extra_args` = the original extra_args plus the
+agent's resume flag (`--resume <agent_session_id>`; codex uses `resume <id>`). Report
+the new session uuid; note the agent has full memory but the chat panel starts empty.

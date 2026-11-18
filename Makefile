@@ -575,6 +575,7 @@ golden-update: build-cli
 	@$(MAKE) _golden-variant NAME=runtime-invalid FLAGS="--runtime=vm"
 	@$(MAKE) _golden-variant NAME=runtime-conflict-legacy FLAGS="--runtime=container --dockerless"
 	@$(MAKE) _golden-variant NAME=without-mcp-container FLAGS="--runtime=container --without-mcp"
+	@$(MAKE) _golden-variant NAME=with-mcp-apps FLAGS="--with-mcp-apps"
 	@$(MAKE) _golden-variant NAME=tunnel-mode FLAGS="--tunnel-server-url https://tunnel.example.com"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-unique FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-unique myproject123"
 	@$(MAKE) _golden-variant NAME=tunnel-mode-mtls FLAGS="--tunnel-server-url https://tunnel.example.com --tunnel-client-cert /etc/swe-swe-tunnel/client.crt"
