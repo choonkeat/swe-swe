@@ -241,3 +241,27 @@ drops server-initiated notifications and cannot relay server->client requests
 (elicitation, roots), and a server->client request id could be mistaken for a
 response. Harmless for tools-only use today; blocks using the proxy as a
 general pass-through.
+
+## Wrap safety (requirements for any future `agent-chat wrap`, 2026-11-18)
+
+Session 7953d892 proposes `agent-chat wrap -- <tool command>`: a pass-through
+go-between in front of each MCP server in native-MCP mode. Done naively, one
+failing `wrap` (old agent-chat without it, npm unreachable, a bug) makes
+EVERY wrapped server disappear at once. Nothing wraps today. Before swe-swe
+wraps anything, all four must hold:
+
+1. **Probe first, fall back.** At session start swe-swe runs
+   `agent-chat wrap --version` with a short timeout. Failure or timeout ->
+   write the plain, unwrapped server commands exactly as today.
+2. **Resolve once.** Use the agent-chat already fetched for the chat server;
+   never a fresh `swe-npx` per wrapped server (an npm outage would otherwise
+   hit every server, and each start would pay npx resolution).
+3. **Wrapper fails open.** If `wrap` can't do its extra job (reach
+   agent-chat, fetch a page), it still relays every byte between agent and
+   server unchanged. Only a failure to start the child itself is fatal.
+4. **Kill switch.** `SWE_SWE_NO_WRAP=1` in `.swe-swe/env` forces unwrapped
+   commands without an upgrade.
+
+Scope: only servers swe-swe configures; user-added servers stay untouched.
+This is the version-compat rule applied to swe-swe: use an agent-chat
+feature only after checking it is there.
