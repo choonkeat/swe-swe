@@ -193,7 +193,8 @@ func (f *mcpLessFleet) startLocked(spec proxySpec) {
 	// A socket left by a helper that stopped would make the new one's bind
 	// fail -- and keeps the agent believing the old one is still there.
 	os.Remove(sock)
-	cmd := exec.Command(mcpCliProxyBin, proxyArgs(spec, sock, mcpAppsEnabled())...)
+	advertiseUI := mcpAppsEnabled()
+	cmd := exec.Command(mcpCliProxyBin, proxyArgs(spec, sock, advertiseUI)...)
 	cmd.Env = f.env
 	cmd.Dir = f.workDir
 	cmd.Stdout = os.Stdout
@@ -207,7 +208,11 @@ func (f *mcpLessFleet) startLocked(spec proxySpec) {
 		return
 	}
 	pid := cmd.Process.Pid
-	log.Printf("mcp-less: started proxy %s (pid %d) socket %s", spec.Name, pid, sock)
+	uiNote := ""
+	if advertiseUI {
+		uiNote = " advertise-ui"
+	}
+	log.Printf("mcp-less: started proxy %s (pid %d) socket %s%s", spec.Name, pid, sock, uiNote)
 	trackPid(pid)
 	f.procs[spec.Name] = cmd
 	// No silent Wait (coding rule): reap and log name+pid+exit.

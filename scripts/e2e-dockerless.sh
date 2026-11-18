@@ -21,6 +21,9 @@
 # so "the agent can still call a tool" is the only claim that matters and the
 # only one asserted end to end.
 #
+# E2E_MCP_APPS=1 (with E2E_WITHOUT_MCP=1) also inits with --with-mcp-apps and
+# asserts every proxy the server starts runs with --advertise-ui.
+#
 # E2E_POISON_NODE=1 additionally masks node/npx from the SERVER process's
 # PATH (exit-127 shims) and hard-asserts the node-free contract: md-serve
 # (Files tab backend) must start and serve via swe-npx, and the .mcp.json
@@ -38,6 +41,7 @@ CLI="$WORKSPACE_DIR/dist/swe-swe.$(go env GOOS)-$(go env GOARCH)"
 SERVER_PID=""
 FAILS=0
 E2E_WITHOUT_MCP="${E2E_WITHOUT_MCP:-}"
+E2E_MCP_APPS="${E2E_MCP_APPS:-}"
 # Socket root the server will use: $TMPDIR/swe-swe-<uid>/mcp (mcpLessSocketRoot).
 # Deliberately short -- unix socket paths cap at 108 bytes, and the metadata-dir
 # path that seemed the natural home blew straight past it.
@@ -68,6 +72,7 @@ PROJ="$TEST_DIR/proj"
     && printf '# e2e\nhello dockerless\n' > README.md && git add -A && git commit -qm init )
 INIT_ARGS=(init --dockerless --project-directory "$PROJ")
 [ -n "$E2E_WITHOUT_MCP" ] && INIT_ARGS+=(--without-mcp)
+[ -n "$E2E_MCP_APPS" ] && INIT_ARGS+=(--with-mcp-apps)
 HOME="$HOME_DIR" "$CLI" "${INIT_ARGS[@]}" > "$TEST_DIR/init.log" || { echo "init failed"; tail -20 "$TEST_DIR/init.log"; exit 1; }
 SWEDIR="$(ls -d "$HOME_DIR"/.swe-swe/projects/*/ | head -1)"
 echo "  metadata dir: $SWEDIR"
@@ -145,6 +150,10 @@ if [ -n "$E2E_WITHOUT_MCP" ]; then
     # and the agent has neither MCP config nor a CLI to fall back to.
     grep -q 'MCP-less mode' "$TEST_DIR/up.log" && pass "up announces MCP-less mode" \
         || { fail "up did not announce MCP-less mode"; head -20 "$TEST_DIR/up.log"; }
+    if [ -n "$E2E_MCP_APPS" ]; then
+        grep -q 'MCP Apps: proxies tell MCP servers' "$TEST_DIR/up.log" && pass "up announces MCP Apps" \
+            || fail "up did not announce MCP Apps"
+    fi
 fi
 
 echo "=== Phase 5: assert tab-serving endpoints ==="
@@ -234,6 +243,24 @@ if [ "${E2E_POISON_NODE:-}" = "1" ] && [ "${E2E_SKIP_PLAYWRIGHT:-}" != "1" ]; th
     else
         fail "md-serve did not run cleanly under node poison"
         grep 'md-serve' "$TEST_DIR/up.log" | tail -5
+    fi
+fi
+
+if [ -n "$E2E_WITHOUT_MCP" ] && [ "${E2E_SKIP_PLAYWRIGHT:-}" != "1" ]; then
+    echo "=== Phase 6c: MCP Apps advertisement (post-session) ==="
+    # The server logs each proxy start; with --with-mcp-apps every one must
+    # carry advertise-ui, and without it none may.
+    STARTED="$(grep -c 'mcp-less: started proxy' "$TEST_DIR/up.log")"
+    WITH_UI="$(grep 'mcp-less: started proxy' "$TEST_DIR/up.log" | grep -c ' advertise-ui$')"
+    if [ "$STARTED" -eq 0 ]; then
+        fail "no proxy starts logged"
+    elif [ -n "$E2E_MCP_APPS" ] && [ "$WITH_UI" -eq "$STARTED" ]; then
+        pass "all $STARTED proxy starts carry advertise-ui"
+    elif [ -z "$E2E_MCP_APPS" ] && [ "$WITH_UI" -eq 0 ]; then
+        pass "none of $STARTED proxy starts carry advertise-ui (flag off)"
+    else
+        fail "advertise-ui on $WITH_UI of $STARTED proxy starts (E2E_MCP_APPS='$E2E_MCP_APPS')"
+        grep 'mcp-less: started proxy' "$TEST_DIR/up.log" | head -5
     fi
 fi
 

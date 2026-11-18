@@ -280,8 +280,12 @@ init.json, restored on `--previous-init-flags=reuse`.
   keeps the setting but prints a stderr note that it does nothing yet.
 - Verified: unit tests for each hop (init.json round-trip, up env, proxy
   args on/off byte-for-byte); live `init --runtime=host --without-mcp
-  --with-mcp-apps` writes both fields with no note. Not run live: a full
-  `swe-swe up` + session; the proxy's `--advertise-ui` itself was live-tested
-  in Phase 5.
+  --with-mcp-apps` writes both fields with no note.
+- Live e2e (2026-11-18), `E2E_WITHOUT_MCP=1 E2E_MCP_APPS=1
+  ./scripts/e2e-dockerless.sh`: real `swe-swe up` + browser sessions; all 32
+  proxy starts logged `advertise-ui`, and the MCP-less specs (agent reaches
+  tools through `mcp`) pass with it on. Control run without E2E_MCP_APPS:
+  0 of 28 carry it. Both runs share the same unrelated failures (homepage
+  title grep, Files-tab md-serve theme-cookie spec), so they predate this.
 - Left: native-MCP mode via `agent-chat wrap`, under the Wrap safety rules
   above, once agent-chat releases `wrap` (now only on its `mcp-apps` branch).
