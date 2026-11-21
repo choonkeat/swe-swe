@@ -194,6 +194,192 @@
             text-decoration: underline;
         }
 
+        /* What's new: rendered by whats-new.js from CHANGELOG.md on GitHub. */
+        /* The panel anchors to the header row, not the button, so it opens at
+           the left edge and stays on screen on narrow phones. */
+        .header__inner {
+            position: relative;
+        }
+        .whats-new-wrap {
+            display: inline-block;
+        }
+        .whats-new-btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: 4px;
+            padding: 3px;
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+            color: var(--text-secondary);
+            vertical-align: middle;
+            cursor: pointer;
+            transition: color 0.15s, background 0.15s;
+        }
+        .whats-new-btn:hover {
+            background: var(--bg-tertiary, rgba(148, 163, 184, 0.15));
+            color: var(--text-bright);
+        }
+        .whats-new-btn--active {
+            color: var(--accent-light);
+        }
+        /* Unread: a release newer than the one this browser last opened the
+           panel on. Same red dot as agent-chat. */
+        .whats-new-btn__dot {
+            position: absolute;
+            top: 1px;
+            right: 1px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #ef4444;
+            box-shadow: 0 0 0 1.5px var(--bg-primary);
+        }
+        .whats-new-btn__dot[hidden] {
+            display: none;
+        }
+        .whats-new {
+            position: absolute;
+            top: calc(100% - 8px);
+            left: 16px;
+            z-index: 60;
+            width: 380px;
+            max-width: calc(100% - 32px);
+            max-height: 70vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+        .whats-new[hidden] {
+            display: none;
+        }
+        .whats-new__heading {
+            padding: 10px 14px 0;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-bright);
+        }
+        .whats-new__scope {
+            margin-left: 4px;
+            font-size: 11px;
+            font-weight: 400;
+            color: var(--text-secondary);
+        }
+        .whats-new__body {
+            overflow-y: auto;
+            padding: 0 14px;
+        }
+        .whats-new__release {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-primary);
+        }
+        .whats-new__release:last-child {
+            border-bottom: none;
+        }
+        .whats-new__release-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 6px;
+            margin-bottom: 4px;
+        }
+        .whats-new__version {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+        .whats-new__title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-bright);
+        }
+        .whats-new__tag {
+            padding: 0 6px;
+            font-size: 10px;
+            border-radius: 999px;
+        }
+        .whats-new__tag--current {
+            color: var(--text-secondary);
+            border: 1px solid var(--border-primary);
+        }
+        .whats-new__tag--newer {
+            color: var(--text-bright);
+            background: var(--accent-20);
+            border: 1px solid var(--accent-30);
+        }
+        .whats-new__section {
+            margin-top: 6px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+        }
+        .whats-new__list {
+            margin: 2px 0 0;
+            padding-left: 16px;
+            font-size: 12px;
+            line-height: 1.45;
+            color: var(--text-primary);
+        }
+        .whats-new__list li + li {
+            margin-top: 3px;
+        }
+        .whats-new__list strong {
+            color: var(--text-bright);
+        }
+        .whats-new__list code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            padding: 0 3px;
+            background: rgba(148, 163, 184, 0.15);
+            border-radius: 3px;
+        }
+        .whats-new__list a,
+        .whats-new__more {
+            color: var(--accent-light);
+            text-decoration: none;
+        }
+        .whats-new__list a:hover,
+        .whats-new__more:hover {
+            text-decoration: underline;
+        }
+        .whats-new__actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 8px 14px;
+            border-top: 1px solid var(--border-primary);
+        }
+        .whats-new__more {
+            font-size: 11px;
+        }
+        .whats-new__done {
+            padding: 4px 14px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            border: none;
+            border-radius: 14px;
+            /* same theme-driven fill as the New Session button: follows the
+               chosen accent colour, with text that stays readable on it */
+            background: var(--accent-gradient);
+            color: var(--accent-text);
+            cursor: pointer;
+        }
+        .whats-new__done:hover {
+            background: var(--accent-gradient-hover);
+        }
+
         /* Main content */
         .main {
             flex: 1;
@@ -2355,7 +2541,7 @@
                 </div>
                 <div class="header__text">
                     <h1>swe-swe</h1>
-                    <p>Session Manager{{if .Version}} <span class="header__version">{{.Version}}</span>{{end}}<span class="update-badge-wrap" id="update-badge-wrap" data-current-version="{{.VersionNumber}}"></span></p>
+                    <p>Session Manager{{if .Version}} <span class="header__version">{{.Version}}</span>{{end}}<span class="update-badge-wrap" id="update-badge-wrap" data-current-version="{{.VersionNumber}}"></span><span class="whats-new-wrap" id="whats-new-wrap" data-current-version="{{.VersionNumber}}"></span></p>
                 </div>
                 <settings-gear id="settings-btn"></settings-gear>
             </div>
@@ -2580,5 +2766,6 @@
     <script type="module" src="/theme-mode.js"></script>
     <script type="module" src="/homepage-theme.js"></script>
     <script type="module" src="/update-check.js"></script>
+    <script type="module" src="/whats-new.js"></script>
 </body>
 </html>
